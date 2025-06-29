@@ -1,22 +1,20 @@
 // sharing.js
 
 import { db, doc, getDoc, updateDoc, setDoc, onSnapshot, collection, addDoc, query, where, deleteDoc, arrayUnion, collectionGroup } from './firebase-config.js';
-import { showToast, showConfirmationModal, navigateToPage } from './harvest.js'; // Réutilisation des fonctions
+import { showToast, showConfirmationModal, navigateToPage } from './harvest.js';
 
-// --- DOM ELEMENT SELECTION ---
-const sharedFieldsPage = document.getElementById('page-shared-field-list');
-const navSharedFieldsBtn = document.getElementById('nav-shared-fields');
-const myFieldsPage = document.getElementById('page-field-list');
-const navMyFieldsBtn = document.getElementById('nav-fields'); // Bouton "Mes Parcelles" existant
+// --- SÉLECTION DES ÉLÉMENTS DU DOM ---
 const sharedFieldListContainer = document.getElementById('shared-field-list-container');
+const navSharedFieldsBtn = document.getElementById('nav-shared-fields');
+const navMyFieldsBtn = document.getElementById('nav-fields');
 
-// --- GLOBAL STATE ---
+// --- ÉTAT GLOBAL ---
 let currentUser = null;
 let unsubscribeSharedFields = null;
 
 /**
- * Initialise le module de partage
- * @param {User} user - L'objet utilisateur de Firebase
+ * Initialise le module de partage.
+ * @param {import("firebase/auth").User} user - L'objet utilisateur de Firebase.
  */
 export function initSharing(user) {
     currentUser = user;
@@ -25,37 +23,27 @@ export function initSharing(user) {
 }
 
 /**
- * Configure les écouteurs d'événements pour la navigation
+ * Configure les écouteurs d'événements pour la navigation de partage.
  */
 function setupSharingEventListeners() {
-    navMyFieldsBtn.addEventListener('click', () => switchView('my-fields'));
-    navSharedFieldsBtn.addEventListener('click', () => switchView('shared-fields'));
+    // Utilise le système de navigation central de harvest.js
+    navMyFieldsBtn.addEventListener('click', () => navigateToPage('list'));
+    navSharedFieldsBtn.addEventListener('click', () => navigateToPage('shared-list'));
     
     sharedFieldListContainer.addEventListener('click', (e) => {
         const card = e.target.closest('.field-card-content');
         if (card) {
             const ownerId = card.dataset.ownerId;
             const fieldId = card.dataset.key;
-            // Passe le ownerId à la page de détails pour savoir où chercher les données
+            // Passe l'ownerId à la page de détails pour savoir où chercher les données
             navigateToPage('details', fieldId, ownerId);
         }
     });
 }
 
 /**
- * Affiche la vue sélectionnée ("Mes Parcelles" ou "Champs Partagés")
- * @param {string} viewName - 'my-fields' ou 'shared-fields'
- */
-function switchView(viewName) {
-    myFieldsPage.classList.toggle('hidden', viewName !== 'my-fields');
-    sharedFieldsPage.classList.toggle('hidden', viewName !== 'shared-fields');
-    navMyFieldsBtn.classList.toggle('active', viewName === 'my-fields');
-    navSharedFieldsBtn.classList.toggle('active', viewName === 'shared-fields');
-}
-
-/**
- * Génère un lien de partage unique pour une parcelle
- * @param {string} fieldId - L'ID de la parcelle à partager
+ * Génère un lien de partage unique pour une parcelle.
+ * @param {string} fieldId - L'ID de la parcelle à partager.
  */
 export async function generateShareLink(fieldId) {
     if (!currentUser) return;
@@ -80,8 +68,8 @@ export async function generateShareLink(fieldId) {
 }
 
 /**
- * Affiche une modale avec le lien de partage
- * @param {string} url - Le lien de partage à afficher
+ * Affiche une modale avec le lien de partage.
+ * @param {string} url - Le lien de partage à afficher.
  */
 function showShareLinkModal(url) {
     const modalContainer = document.getElementById('modal-container');
@@ -103,15 +91,20 @@ function showShareLinkModal(url) {
     document.getElementById('copy-share-url-btn').addEventListener('click', () => {
         const input = document.getElementById('share-url-input');
         input.select();
-        document.execCommand('copy');
-        showToast("Lien copié !");
+        // Utilise execCommand pour une meilleure compatibilité
+        try {
+            document.execCommand('copy');
+            showToast("Lien copié !");
+        } catch (err) {
+            showToast("Erreur lors de la copie.");
+        }
     });
 }
 
 /**
- * Traite un jeton de partage
- * @param {string} token - Le jeton de partage
- * @param {User} user - L'utilisateur qui réclame le jeton
+ * Traite un jeton de partage lors de l'arrivée sur le site.
+ * @param {string} token - Le jeton de partage.
+ * @param {import("firebase/auth").User} user - L'utilisateur qui réclame le jeton.
  */
 export async function handleShareToken(token, user) {
     if (!token || !user) return;
@@ -129,7 +122,7 @@ export async function handleShareToken(token, user) {
 
         if (tokenData.ownerId === user.uid) {
             showToast("Vous ne pouvez pas partager une parcelle avec vous-même.");
-            await deleteDoc(tokenDocRef);
+            await deleteDoc(tokenDocRef); // Supprime le jeton même dans ce cas
             return;
         }
         
@@ -147,70 +140,86 @@ export async function handleShareToken(token, user) {
         const fieldName = fieldDocSnap.data().name;
         const ownerName = ownerDocSnap.data().name;
 
+        // Ajoute l'UID de l'utilisateur actuel au tableau 'accessControl' de la parcelle
         await updateDoc(fieldDocRef, {
             accessControl: arrayUnion(user.uid)
         });
 
+        // Supprime le jeton pour qu'il ne soit plus utilisable
         await deleteDoc(tokenDocRef);
         
-        showConfirmationModal(`Accès accordé ! ${ownerName} a partagé la parcelle "${fieldName}" avec vous.`, () => {
-            switchView('shared-fields');
-        });
+        showToast(`Accès accordé à la parcelle "${fieldName}".`);
+        navigateToPage('shared-list');
 
     } catch (error) {
         console.error("Erreur lors du traitement du jeton :", error);
         showToast("Une erreur est survenue lors de l'acceptation du partage.");
     } finally {
+        // Nettoie l'URL pour enlever le jeton
         const url = new URL(window.location);
         url.searchParams.delete('token');
-        window.history.replaceState({}, document.title, url);
+        window.history.replaceState({}, document.title, url.toString());
     }
 }
 
 /**
- * Charge et affiche les parcelles partagées
+ * Charge et affiche les parcelles partagées avec l'utilisateur actuel en temps réel.
  */
 function loadSharedFields() {
     if (unsubscribeSharedFields) unsubscribeSharedFields();
 
+    // Requête sur un groupe de collections pour trouver toutes les parcelles partagées avec l'utilisateur
     const q = query(collectionGroup(db, 'fields'), where('accessControl', 'array-contains', currentUser.uid));
 
-    unsubscribeSharedFields = onSnapshot(q, (snapshot) => {
-        // [MODIFIÉ] La ligne qui cache le bouton a été retirée.
-        // navSharedFieldsBtn.classList.toggle('hidden', snapshot.empty);
-
+    unsubscribeSharedFields = onSnapshot(q, async (snapshot) => {
         if (snapshot.empty) {
             sharedFieldListContainer.innerHTML = `<p class="text-center text-gray-500 mt-8">Aucune parcelle n'a été partagée avec vous.</p>`;
             return;
         }
 
-        sharedFieldListContainer.innerHTML = '';
-        
-        snapshot.docs.forEach(async (fieldDoc) => {
+        // Utilise Promise.all pour gérer correctement les requêtes asynchrones
+        const fieldCardPromises = snapshot.docs.map(async (fieldDoc) => {
             const field = { id: fieldDoc.id, ...fieldDoc.data() };
-            const ownerDoc = await getDoc(doc(db, "users", field.ownerId));
-            const ownerName = ownerDoc.exists() ? ownerDoc.data().name : "Inconnu";
-            
-            const card = document.createElement('div');
-            card.className = 'bg-white p-4 rounded-xl shadow-sm border border-gray-200';
-            card.innerHTML = `
-                <div class="field-card-content cursor-pointer" data-key="${field.id}" data-owner-id="${field.ownerId}">
-                    <div class="flex justify-between items-start">
-                        <div>
-                            <h3 class="font-bold text-lg text-gray-800">${field.name}</h3>
-                            <p class="text-sm text-gray-500">Partagé par : <span class="font-semibold">${ownerName}</span></p>
-                        </div>
-                        <div class="text-right">
-                             <p class="text-sm text-gray-500">${field.crop || 'N/A'}</p>
+            try {
+                const ownerDoc = await getDoc(doc(db, "users", field.ownerId));
+                const ownerName = ownerDoc.exists() ? ownerDoc.data().name : "Propriétaire Inconnu";
+                
+                // Renvoie le HTML de la carte pour cette parcelle
+                return `
+                    <div class="bg-white p-4 rounded-xl shadow-sm border border-gray-200">
+                        <div class="field-card-content cursor-pointer" data-key="${field.id}" data-owner-id="${field.ownerId}">
+                            <div class="flex justify-between items-start">
+                                <div>
+                                    <h3 class="font-bold text-lg text-gray-800">${field.name}</h3>
+                                    <p class="text-sm text-gray-500">Partagé par : <span class="font-semibold">${ownerName}</span></p>
+                                </div>
+                                <div class="text-right">
+                                     <p class="text-sm text-gray-500">${field.crop || 'N/A'}</p>
+                                </div>
+                            </div>
                         </div>
                     </div>
-                </div>
-            `;
-            sharedFieldListContainer.appendChild(card);
+                `;
+            } catch (error) {
+                console.error("Erreur de récupération du propriétaire pour la parcelle:", field.id, error);
+                return ''; // Renvoie une chaîne vide en cas d'erreur pour ne pas bloquer l'affichage
+            }
         });
+
+        // Attend que toutes les informations (y compris les noms des propriétaires) soient récupérées
+        const fieldCardsHTML = await Promise.all(fieldCardPromises);
+        
+        // Met à jour le conteneur avec toutes les cartes d'un seul coup
+        sharedFieldListContainer.innerHTML = fieldCardsHTML.join('');
 
     }, (error) => {
         console.error("Erreur de chargement des champs partagés:", error);
-        showToast("Erreur de chargement des champs partagés.");
+        showToast("Erreur de chargement des partages.");
+        // Affiche un message d'erreur clair pour l'utilisateur, suggérant la cause la plus probable
+        sharedFieldListContainer.innerHTML = `
+            <div class="text-center text-red-600 mt-8 p-4 bg-red-100 rounded-lg border border-red-200">
+                <p class="font-bold">La récupération des partages a échoué.</p>
+                <p class="text-sm mt-2">Cela est souvent dû à un index manquant dans la base de données. Veuillez suivre les instructions pour créer cet index dans votre console Firebase.</p>
+            </div>`;
     });
 }

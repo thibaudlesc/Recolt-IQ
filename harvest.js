@@ -5,6 +5,7 @@ import { generateShareLink } from './sharing.js';
 
 // --- SÉLECTION DES ÉLÉMENTS DU DOM ---
 const pageFieldList = document.getElementById('page-field-list');
+const pageSharedFieldList = document.getElementById('page-shared-field-list');
 const pageFieldDetails = document.getElementById('page-field-details');
 const cropFiltersContainer = document.getElementById('crop-filters-container');
 const fieldListContainer = document.getElementById('field-list-container');
@@ -14,6 +15,7 @@ const fieldInfoCards = document.getElementById('field-info-cards');
 const trailersListContainer = document.getElementById('trailers-list');
 const addTrailerFab = document.getElementById('add-trailer-fab');
 const navFieldsBtn = document.getElementById('nav-fields');
+const navSharedFieldsBtn = document.getElementById('nav-shared-fields');
 const navSummaryBtn = document.getElementById('nav-summary');
 const navExportBtn = document.getElementById('nav-export');
 const modalContainer = document.getElementById('modal-container');
@@ -63,52 +65,52 @@ export function initHarvestApp(user, profile) {
     }, (error) => showToast("Erreur de chargement des bennes."));
 
     setupEventListeners();
-    navigateToPage('list');
 }
 
-// --- NAVIGATION ENTRE LES PAGES ---
+/**
+ * Gère la navigation entre les différentes vues principales de l'application.
+ * @param {'list' | 'shared-list' | 'details'} page - La vue à afficher.
+ * @param {string | null} key - L'ID de l'élément (ex: fieldId).
+ * @param {string | null} ownerId - L'ID du propriétaire (pour les éléments partagés).
+ */
 export function navigateToPage(page, key = null, ownerId = null) {
     const isMyFieldsVisible = page === 'list';
     const isSharedFieldsVisible = page === 'shared-list';
     const isDetailsVisible = page === 'details';
 
-    document.getElementById('page-field-list').classList.toggle('hidden', !isMyFieldsVisible);
-    document.getElementById('page-shared-field-list').classList.toggle('hidden', !isSharedFieldsVisible);
+    pageFieldList.classList.toggle('hidden', !isMyFieldsVisible);
+    pageSharedFieldList.classList.toggle('hidden', !isSharedFieldsVisible);
     pageFieldDetails.classList.toggle('hidden', !isDetailsVisible);
     
     if (isMyFieldsVisible) {
         currentView = 'my-fields';
-        currentFieldKey = null;
-        currentFieldOwnerId = null;
         updateActiveNav('fields');
         displayCropFilters();
         displayFieldList();
     } else if (isSharedFieldsVisible) {
         currentView = 'shared-fields';
-        currentFieldKey = null;
-        currentFieldOwnerId = null;
         updateActiveNav('shared-fields');
+        // Le chargement des données est géré par onSnapshot dans sharing.js
     } else if (isDetailsVisible && key) {
         currentFieldKey = key;
         currentFieldOwnerId = ownerId || currentUser.uid;
+        // Maintient l'onglet de navigation actif correct lors de la consultation des détails
+        updateActiveNav(currentView);
         displayFieldDetails(key, currentFieldOwnerId);
     }
 }
 
+
 /**
- * [NOUVELLE FONCTION]
  * Met à jour le bouton de navigation actif dans la barre inférieure.
- * C'est la fonction qui manquait et causait l'erreur.
  * @param {string} activeView - L'identifiant de la vue active ('fields', 'shared-fields', etc.)
  */
 export function updateActiveNav(activeView) {
-    // Désactiver tous les boutons de la barre de navigation
     document.querySelectorAll('.nav-btn').forEach(btn => {
         btn.classList.remove('active', 'text-green-600');
         btn.classList.add('text-gray-500');
     });
 
-    // Activer le bouton correspondant à la vue actuelle
     const buttonToActivate = document.getElementById(`nav-${activeView}`);
     if (buttonToActivate) {
         buttonToActivate.classList.add('active', 'text-green-600');
@@ -125,26 +127,43 @@ function displayCropFilters() {
     
     cropFiltersContainer.innerHTML = '';
     const allButton = createFilterButton('Toutes', 'all', selectedCrops.length === 0);
+    allButton.addEventListener('click', () => {
+        selectedCrops = [];
+        displayCropFilters();
+        displayFieldList();
+    });
     cropFiltersContainer.appendChild(allButton);
+
     crops.forEach(crop => {
         const button = createFilterButton(crop, crop, selectedCrops.includes(crop));
+        button.addEventListener('click', () => {
+            if (selectedCrops.includes(crop)) {
+                selectedCrops = selectedCrops.filter(c => c !== crop);
+            } else {
+                selectedCrops.push(crop);
+            }
+            displayCropFilters();
+            displayFieldList();
+        });
         cropFiltersContainer.appendChild(button);
     });
 }
 
 function displayFieldList() {
     fieldListContainer.innerHTML = '';
-    const fieldKeys = Object.keys(harvestData)
-        .filter(key => harvestData[key].ownerId === currentUser.uid && (selectedCrops.length === 0 || selectedCrops.includes(harvestData[key].crop)))
-        .sort((a, b) => harvestData[a].name.localeCompare(harvestData[b].name));
+    const myFields = Object.values(harvestData).filter(key => key.ownerId === currentUser.uid);
 
-    if (fieldKeys.length === 0) {
-        fieldListContainer.innerHTML = `<p class="text-center text-gray-500 mt-8">Aucune parcelle. Cliquez sur "Ajouter Parcelle" pour commencer.</p>`;
+    const filteredFields = (selectedCrops.length === 0 
+        ? myFields 
+        : myFields.filter(field => selectedCrops.includes(field.crop))
+    ).sort((a, b) => a.name.localeCompare(b.name));
+
+    if (filteredFields.length === 0) {
+        fieldListContainer.innerHTML = `<p class="text-center text-gray-500 mt-8">Aucune parcelle à afficher. Vérifiez vos filtres ou ajoutez une nouvelle parcelle.</p>`;
         return;
     }
 
-    fieldKeys.forEach(key => {
-        const field = harvestData[key];
+    filteredFields.forEach(field => {
         const card = document.createElement('div');
         card.className = 'bg-white p-4 rounded-xl shadow-sm border border-gray-200';
         card.innerHTML = createFieldCardHTML(field);
@@ -153,48 +172,57 @@ function displayFieldList() {
 }
 
 async function displayFieldDetails(fieldKey, ownerId) {
+    // On s'assure de lire les données depuis le bon propriétaire (le sien ou celui du partage)
     const fieldDocRef = doc(db, "users", ownerId, "fields", fieldKey);
-    const fieldDocSnap = await getDoc(fieldDocRef);
-
-    if (!fieldDocSnap.exists()) {
-        showToast("Impossible de charger les détails de cette parcelle.");
-        navigateToPage(currentView === 'my-fields' ? 'list' : 'shared-list');
-        return;
-    }
-    const field = { id: fieldDocSnap.id, ...fieldDocSnap.data() };
     
-    detailsHeaderTitle.textContent = field.name;
-    const { totalWeight, yield: yieldValue, totalBaleCount } = calculateTotals(field);
+    // Utilise onSnapshot pour des mises à jour en temps réel dans les détails
+    onSnapshot(fieldDocRef, (fieldDocSnap) => {
+        if (!fieldDocSnap.exists()) {
+            showToast("Impossible de charger les détails de cette parcelle.");
+            navigateToPage(currentView === 'my-fields' ? 'list' : 'shared-list');
+            return;
+        }
+        const field = { id: fieldDocSnap.id, ...fieldDocSnap.data() };
+        
+        detailsHeaderTitle.textContent = field.name;
+        const { totalWeight, yield: yieldValue, totalBaleCount } = calculateTotals(field);
 
-    const canEdit = field.ownerId === currentUser.uid || (field.accessControl && field.accessControl.includes(currentUser.uid));
-    addTrailerFab.classList.toggle('hidden', !canEdit);
+        // La permission d'édition est donnée si on est propriétaire ou si on a les droits d'écriture (logique simplifiée ici)
+        const canEdit = ownerId === currentUser.uid || (field.accessControl && field.accessControl.includes(currentUser.uid));
+        addTrailerFab.classList.toggle('hidden', !canEdit);
 
-    const isLinCrop = field.crop && field.crop.toLowerCase().includes('lin');
-    let lastCardHTML = isLinCrop 
-        ? `<div class="bg-white p-3 rounded-xl shadow-sm text-center"><h3 class="text-xs font-medium text-gray-500">Total Bottes</h3><p class="mt-1 text-lg font-semibold">${totalBaleCount.toLocaleString('fr-FR')}</p></div>`
-        : `<div class="bg-white p-3 rounded-xl shadow-sm text-center"><h3 class="text-xs font-medium text-gray-500">Rendement</h3><p class="mt-1 text-lg font-semibold">${yieldValue.toFixed(2)} qx/ha</p></div>`;
-    
-    fieldInfoCards.innerHTML = `
-        <div class="bg-white p-3 rounded-xl shadow-sm text-center"><h3 class="text-xs font-medium text-gray-500">Culture</h3><p class="mt-1 text-lg font-semibold">${field.crop || 'N/A'}</p></div>
-        <div class="bg-white p-3 rounded-xl shadow-sm text-center"><h3 class="text-xs font-medium text-gray-500">Surface</h3><p class="mt-1 text-lg font-semibold">${(field.size || 0).toLocaleString('fr-FR')} ha</p></div>
-        <div class="bg-white p-3 rounded-xl shadow-sm text-center"><h3 class="text-xs font-medium text-gray-500">Poids Total</h3><p class="mt-1 text-lg font-semibold">${totalWeight.toLocaleString('fr-FR')} kg</p></div>
-        ${lastCardHTML}
-    `;
+        const isLinCrop = field.crop && field.crop.toLowerCase().includes('lin');
+        let lastCardHTML = isLinCrop 
+            ? `<div class="bg-white p-3 rounded-xl shadow-sm text-center"><h3 class="text-xs font-medium text-gray-500">Total Bottes</h3><p class="mt-1 text-lg font-semibold">${totalBaleCount.toLocaleString('fr-FR')}</p></div>`
+            : `<div class="bg-white p-3 rounded-xl shadow-sm text-center"><h3 class="text-xs font-medium text-gray-500">Rendement</h3><p class="mt-1 text-lg font-semibold">${yieldValue.toFixed(2)} qx/ha</p></div>`;
+        
+        fieldInfoCards.innerHTML = `
+            <div class="bg-white p-3 rounded-xl shadow-sm text-center"><h3 class="text-xs font-medium text-gray-500">Culture</h3><p class="mt-1 text-lg font-semibold">${field.crop || 'N/A'}</p></div>
+            <div class="bg-white p-3 rounded-xl shadow-sm text-center"><h3 class="text-xs font-medium text-gray-500">Surface</h3><p class="mt-1 text-lg font-semibold">${(field.size || 0).toLocaleString('fr-FR')} ha</p></div>
+            <div class="bg-white p-3 rounded-xl shadow-sm text-center"><h3 class="text-xs font-medium text-gray-500">Poids Total</h3><p class="mt-1 text-lg font-semibold">${totalWeight.toLocaleString('fr-FR')} kg</p></div>
+            ${lastCardHTML}
+        `;
 
-    trailersListContainer.innerHTML = '';
-    const trailers = (field.trailers || []).map((t, i) => ({ ...t, originalIndex: i }));
-    if (trailers.length === 0) {
-        trailersListContainer.innerHTML = `<p class="text-center text-gray-500 mt-6">Aucune benne enregistrée.</p>`;
-        return;
-    }
+        trailersListContainer.innerHTML = '';
+        const trailers = (field.trailers || []).map((t, i) => ({ ...t, originalIndex: i }));
+        if (trailers.length === 0) {
+            trailersListContainer.innerHTML = `<p class="text-center text-gray-500 mt-6">Aucune benne enregistrée.</p>`;
+            return;
+        }
 
-    trailers.reverse().forEach(trailer => {
-        const card = document.createElement('div');
-        card.className = 'bg-white p-4 rounded-xl shadow-sm border border-gray-200';
-        card.innerHTML = createTrailerCardHTML(trailer, canEdit);
-        trailersListContainer.appendChild(card);
+        trailers.reverse().forEach(trailer => {
+            const card = document.createElement('div');
+            card.className = 'bg-white p-4 rounded-xl shadow-sm border border-gray-200';
+            card.innerHTML = createTrailerCardHTML(trailer, canEdit);
+            trailersListContainer.appendChild(card);
+        });
+
+    }, (error) => {
+        console.error("Erreur de lecture des détails de la parcelle: ", error);
+        showToast("Erreur de chargement des détails.");
     });
 }
+
 
 function createFieldCardHTML(field) {
     const { totalWeight } = calculateTotals(field);
@@ -389,78 +417,87 @@ function showEditFieldModal(fieldKey) {
 }
 
 function showWeightModal(mode, index = -1) {
-    const field = harvestData[currentFieldKey];
-    const isLinCrop = field && field.crop && field.crop.toLowerCase().includes('lin');
-
-    let content = '';
-    if (mode === 'full') {
-        const trailerOptions = trailerNames.map(t => `<option value="${t.name}">${t.name}</option>`).join('');
-        const baleInputHTML = isLinCrop ? `
-            <div>
-                <label for="bale-count-input" class="block text-sm font-medium text-gray-700 mb-1">Nombre de bottes</label>
-                <input type="number" inputmode="numeric" id="bale-count-input" class="w-full p-4 border-2 border-gray-300 rounded-lg text-xl text-center" placeholder="0">
-            </div>` : '';
-
-        content = `
-            <h3 class="text-xl font-semibold mb-6 text-center">Nouvelle benne pleine</h3>
-            <div class="space-y-4">
+    const fieldDocRef = doc(db, "users", currentFieldOwnerId, "fields", currentFieldKey);
+    getDoc(fieldDocRef).then(fieldDocSnap => {
+        if (!fieldDocSnap.exists()) return;
+        const field = fieldDocSnap.data();
+        const isLinCrop = field && field.crop && field.crop.toLowerCase().includes('lin');
+        
+        let content = '';
+        if (mode === 'full') {
+            const trailerOptions = trailerNames.map(t => `<option value="${t.name}">${t.name}</option>`).join('');
+            const baleInputHTML = isLinCrop ? `
                 <div>
-                    <label for="trailer-name-select" class="block text-sm font-medium text-gray-700 mb-1">Nom de la benne</label>
-                    <div class="flex items-center gap-2">
-                        <select id="trailer-name-select" class="w-full p-3 border-2 border-gray-300 rounded-lg text-lg focus:ring-2 focus:ring-green-500 transition">
-                            <option value="">Sélectionner...</option>
-                            ${trailerOptions}
-                        </select>
-                        <button id="add-trailer-name-btn" class="p-3 bg-gray-200 rounded-lg hover:bg-gray-300 transition shrink-0">
-                            <svg class="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15" /></svg>
-                        </button>
+                    <label for="bale-count-input" class="block text-sm font-medium text-gray-700 mb-1">Nombre de bottes</label>
+                    <input type="number" inputmode="numeric" id="bale-count-input" class="w-full p-4 border-2 border-gray-300 rounded-lg text-xl text-center" placeholder="0">
+                </div>` : '';
+
+            content = `
+                <h3 class="text-xl font-semibold mb-6 text-center">Nouvelle benne pleine</h3>
+                <div class="space-y-4">
+                    <div>
+                        <label for="trailer-name-select" class="block text-sm font-medium text-gray-700 mb-1">Nom de la benne</label>
+                        <div class="flex items-center gap-2">
+                            <select id="trailer-name-select" class="w-full p-3 border-2 border-gray-300 rounded-lg text-lg focus:ring-2 focus:ring-green-500 transition">
+                                <option value="">Sélectionner...</option>
+                                ${trailerOptions}
+                            </select>
+                            <button id="add-trailer-name-btn" class="p-3 bg-gray-200 rounded-lg hover:bg-gray-300 transition shrink-0">
+                                <svg class="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15" /></svg>
+                            </button>
+                        </div>
                     </div>
+                    <div>
+                        <label for="weight-input" class="block text-sm font-medium text-gray-700 mb-1">Poids plein (kg)</label>
+                        <input type="number" inputmode="numeric" id="weight-input" data-mode="full" class="w-full p-4 border-2 border-gray-300 rounded-lg text-xl text-center focus:ring-2 focus:ring-green-500 transition" placeholder="0 kg">
+                    </div>
+                    ${baleInputHTML}
                 </div>
-                <div>
-                    <label for="weight-input" class="block text-sm font-medium text-gray-700 mb-1">Poids plein (kg)</label>
-                    <input type="number" inputmode="numeric" id="weight-input" data-mode="full" class="w-full p-4 border-2 border-gray-300 rounded-lg text-xl text-center focus:ring-2 focus:ring-green-500 transition" placeholder="0 kg">
-                </div>
-                ${baleInputHTML}
-            </div>
-            <p id="weight-modal-error" class="text-red-500 text-sm hidden text-center mt-2"></p>
-            <div class="mt-8 grid grid-cols-2 gap-4">
-                <button id="modal-cancel-btn" class="px-6 py-3 bg-gray-200 text-gray-800 rounded-lg hover:bg-gray-300 transition">Annuler</button>
-                <button id="modal-confirm-btn" class="px-6 py-3 bg-green-600 text-white font-bold rounded-lg hover:bg-green-700 transition">Valider</button>
-            </div>`;
-    } else { // mode === 'empty'
-        content = `
-            <h3 class="text-xl font-semibold mb-6 text-center">Finaliser : Poids à vide</h3>
-            <input type="number" inputmode="numeric" id="weight-input" data-mode="empty" data-index="${index}" class="w-full p-4 border-2 border-gray-300 rounded-lg text-xl text-center" placeholder="0 kg">
-            <p id="weight-modal-error" class="text-red-500 text-sm hidden text-center mt-2"></p>
-            <div class="mt-8 grid grid-cols-2 gap-4">
-                <button id="modal-cancel-btn" class="px-6 py-3 bg-gray-200 text-gray-800 rounded-lg">Annuler</button>
-                <button id="modal-confirm-btn" class="px-6 py-3 bg-green-600 text-white font-bold rounded-lg">Valider</button>
-            </div>`;
-    }
-    openModal(content, 'weight');
+                <p id="weight-modal-error" class="text-red-500 text-sm hidden text-center mt-2"></p>
+                <div class="mt-8 grid grid-cols-2 gap-4">
+                    <button id="modal-cancel-btn" class="px-6 py-3 bg-gray-200 text-gray-800 rounded-lg hover:bg-gray-300 transition">Annuler</button>
+                    <button id="modal-confirm-btn" class="px-6 py-3 bg-green-600 text-white font-bold rounded-lg hover:bg-green-700 transition">Valider</button>
+                </div>`;
+        } else { // mode === 'empty'
+            content = `
+                <h3 class="text-xl font-semibold mb-6 text-center">Finaliser : Poids à vide</h3>
+                <input type="number" inputmode="numeric" id="weight-input" data-mode="empty" data-index="${index}" class="w-full p-4 border-2 border-gray-300 rounded-lg text-xl text-center" placeholder="0 kg">
+                <p id="weight-modal-error" class="text-red-500 text-sm hidden text-center mt-2"></p>
+                <div class="mt-8 grid grid-cols-2 gap-4">
+                    <button id="modal-cancel-btn" class="px-6 py-3 bg-gray-200 text-gray-800 rounded-lg">Annuler</button>
+                    <button id="modal-confirm-btn" class="px-6 py-3 bg-green-600 text-white font-bold rounded-lg">Valider</button>
+                </div>`;
+        }
+        openModal(content, 'weight');
+    });
 }
 
 function showEditModal(index) {
-    const trailer = harvestData[currentFieldKey].trailers[index];
-    const content = `
-        <h3 class="text-xl font-semibold mb-6 text-center">Modifier la pesée</h3>
-        <div class="space-y-4">
-            <div>
-                <label for="edit-weight-full" class="block text-sm font-medium text-gray-700">Poids Plein (kg)</label>
-                <input type="number" inputmode="numeric" id="edit-weight-full" data-index="${index}" value="${trailer.full || ''}" class="mt-1 w-full p-3 border-2 border-gray-300 rounded-lg text-lg text-center">
+    const fieldDocRef = doc(db, "users", currentFieldOwnerId, "fields", currentFieldKey);
+    getDoc(fieldDocRef).then(fieldDocSnap => {
+        if (!fieldDocSnap.exists()) return;
+        const trailer = fieldDocSnap.data().trailers[index];
+        const content = `
+            <h3 class="text-xl font-semibold mb-6 text-center">Modifier la pesée</h3>
+            <div class="space-y-4">
+                <div>
+                    <label for="edit-weight-full" class="block text-sm font-medium text-gray-700">Poids Plein (kg)</label>
+                    <input type="number" inputmode="numeric" id="edit-weight-full" data-index="${index}" value="${trailer.full || ''}" class="mt-1 w-full p-3 border-2 border-gray-300 rounded-lg text-lg text-center">
+                </div>
+                <div>
+                    <label for="edit-weight-empty" class="block text-sm font-medium text-gray-700">Poids Vide (kg)</label>
+                    <input type="number" inputmode="numeric" id="edit-weight-empty" value="${trailer.empty || ''}" class="mt-1 w-full p-3 border-2 border-gray-300 rounded-lg text-lg text-center">
+                </div>
             </div>
-            <div>
-                <label for="edit-weight-empty" class="block text-sm font-medium text-gray-700">Poids Vide (kg)</label>
-                <input type="number" inputmode="numeric" id="edit-weight-empty" value="${trailer.empty || ''}" class="mt-1 w-full p-3 border-2 border-gray-300 rounded-lg text-lg text-center">
+            <div class="mt-8 grid grid-cols-2 gap-4">
+                <button id="edit-modal-cancel-btn" class="px-6 py-3 bg-gray-200 rounded-lg">Annuler</button>
+                <button id="edit-modal-save-btn" class="px-6 py-3 bg-blue-600 text-white font-bold rounded-lg">Enregistrer</button>
             </div>
-        </div>
-        <div class="mt-8 grid grid-cols-2 gap-4">
-            <button id="edit-modal-cancel-btn" class="px-6 py-3 bg-gray-200 rounded-lg">Annuler</button>
-            <button id="edit-modal-save-btn" class="px-6 py-3 bg-blue-600 text-white font-bold rounded-lg">Enregistrer</button>
-        </div>
-    `;
-    openModal(content, 'edit');
+        `;
+        openModal(content, 'edit');
+    });
 }
+
 
 function showAddTrailerNameModal() {
     const content = `
@@ -621,8 +658,8 @@ async function handleSaveEdit() {
     const trailers = fieldData.trailers || [];
     const trailer = trailers[index];
 
-    if (!isNaN(newFull)) trailer.full = newFull;
-    if (!isNaN(newEmpty)) trailer.empty = newEmpty;
+    if (!isNaN(newFull) && newFull > 0) trailer.full = newFull;
+    if (!isNaN(newEmpty) && newEmpty > 0) trailer.empty = newEmpty;
 
     try {
         await updateDoc(fieldDocRef, { trailers: trailers });
@@ -644,8 +681,8 @@ function handleDeleteField(fieldKey) {
         try {
             const fieldDocRef = doc(db, 'users', currentUser.uid, 'fields', fieldKey);
             await deleteDoc(fieldDocRef);
-            delete harvestData[fieldKey]; // Mettre à jour l'état local
-            displayFieldList(); // Rafraîchir
+            delete harvestData[fieldKey];
+            displayFieldList();
             showToast(`Parcelle "${field.name}" supprimée.`);
         } catch (error) {
             showToast("Erreur lors de la suppression.");
@@ -700,6 +737,7 @@ async function handleAddNewTrailerName() {
 
 function setupEventListeners() {
     backToListBtn.addEventListener('click', () => {
+        // Le retour se fait vers la liste d'où l'on vient (la sienne ou celle des partages)
         navigateToPage(currentView === 'my-fields' ? 'list' : 'shared-list');
     });
 
@@ -799,9 +837,11 @@ function showGlobalResults() {
         <div class="mt-8"><button id="global-results-close-btn" class="w-full px-6 py-3 bg-gray-200 text-gray-800 rounded-lg">Fermer</button></div>
     `;
 
-    openModal(content, 'confirmation'); // Using 'confirmation' to get close behavior
+    openModal(content, 'confirmation'); 
     document.getElementById('confirmation-confirm-btn').classList.add('hidden');
     document.getElementById('confirmation-cancel-btn').textContent = "Fermer";
+    document.getElementById('confirmation-cancel-btn').addEventListener('click', closeModal);
+
 }
 
 
