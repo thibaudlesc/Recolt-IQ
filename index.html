@@ -1,0 +1,240 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Recolt'IQ - Suivi de Récolte Intelligent</title>
+    
+    <link rel="apple-touch-icon" href="apple-touch-icon.png">
+
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <link rel="stylesheet" href="style.css">
+    <style>
+        body { font-family: 'Inter', sans-serif; background-color: #f3f4f6; -webkit-tap-highlight-color: transparent; }
+        .nav-btn.active svg { color: #16a34a; /* text-green-600 */ }
+    </style>
+</head>
+<body class="antialiased text-gray-800 bg-white">
+
+    <!-- En-tête principal -->
+    <header id="main-header" class="bg-white/80 backdrop-blur-sm sticky top-0 z-40 shadow-sm">
+        <div class="container mx-auto px-4 py-3 flex justify-between items-center">
+            <div class="flex items-center">
+                <a href="#" id="nav-logo" class="font-extrabold text-2xl text-green-600">Recolt'IQ</a>
+                <span id="premium-badge" class="hidden ml-3 bg-yellow-400 text-yellow-900 text-xs font-bold px-2 py-1 rounded-full uppercase">Premium</span>
+            </div>
+            <nav class="hidden md:flex items-center space-x-6">
+                <a href="#landing-page" id="nav-link-home" class="text-gray-600 hover:text-green-600">Accueil</a>
+                <a href="#features" class="text-gray-600 hover:text-green-600">Fonctionnalités</a>
+                <a href="#pricing" class="text-gray-600 hover:text-green-600">Tarifs</a>
+                <a href="#" id="nav-link-app" class="text-gray-600 hover:text-green-600 hidden">Mon Espace</a>
+            </nav>
+            <div class="flex items-center space-x-4">
+                 <a href="#" id="nav-link-login" class="bg-green-600 text-white font-bold px-5 py-2 rounded-full hover:bg-green-700 transition">Connexion</a>
+                 <button id="nav-link-logout" class="hidden bg-gray-200 text-gray-800 font-bold px-5 py-2 rounded-full hover:bg-gray-300 transition">Déconnexion</button>
+            </div>
+        </div>
+    </header>
+
+    <main>
+        <!-- Page d'accueil -->
+        <section id="landing-page" class="">
+            <!-- Section Héros -->
+            <div class="bg-white">
+                <div class="container mx-auto px-4 py-20 text-center">
+                    <h1 class="text-4xl md:text-6xl font-extrabold text-gray-800 leading-tight">
+                        Optimisez votre moisson,
+                        <span class="block text-green-600">du champ au silo.</span>
+                    </h1>
+                    <p class="mt-6 text-lg text-gray-600 max-w-2xl mx-auto">
+                        Suivez chaque benne, calculez vos rendements en temps réel et partagez l'accès à vos parcelles en un clic.
+                    </p>
+                    <div class="mt-8">
+                        <a href="#" id="cta-start-demo" class="bg-green-600 text-white font-bold text-lg px-8 py-4 rounded-full hover:bg-green-700 transition transform hover:scale-105 inline-block">
+                            Démarrer la démo gratuite
+                        </a>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Section Fonctionnalités -->
+            <section id="features" class="py-20 bg-gray-50">
+                <div class="container mx-auto px-4">
+                    <h2 class="text-3xl font-bold text-center mb-12">Une application pensée pour les agriculteurs</h2>
+                    <div class="grid md:grid-cols-3 gap-8 text-center">
+                         <div class="bg-white p-8 rounded-xl shadow-sm">
+                            <h3 class="text-xl font-bold mb-2">Suivi en temps réel</h3>
+                            <p class="text-gray-600">Saisissez les pesées directement depuis votre smartphone. Les données sont instantanément synchronisées.</p>
+                        </div>
+                        <div class="bg-white p-8 rounded-xl shadow-sm">
+                            <h3 class="text-xl font-bold mb-2">Partage Facile</h3>
+                            <p class="text-gray-600">Donnez accès à une parcelle à un employé ou un partenaire avec un simple lien. La collaboration n'a jamais été aussi simple.</p>
+                        </div>
+                        <div class="bg-white p-8 rounded-xl shadow-sm">
+                            <h3 class="text-xl font-bold mb-2">Export & Analyse</h3>
+                            <p class="text-gray-600">Exportez toutes vos données au format Excel pour vos archives ou une analyse plus poussée.</p>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+             <!-- Section Tarifs -->
+            <section id="pricing" class="py-20">
+                 <div class="container mx-auto px-4">
+                    <h2 class="text-3xl font-bold text-center mb-4">Un tarif simple et transparent</h2>
+                    <p class="text-center text-gray-600 mb-12">Commencez gratuitement, passez à la version Pro quand vous en avez besoin.</p>
+                    <div class="flex justify-center">
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-8 max-w-4xl">
+                            <div class="border border-gray-200 rounded-xl p-8">
+                                <h3 class="text-2xl font-bold">Démo</h3>
+                                <p class="text-gray-500 mt-2">Idéal pour tester l'application.</p>
+                                <p class="text-4xl font-extrabold my-6">0€</p>
+                                <ul class="space-y-3 text-gray-700">
+                                    <li class="flex items-center"><span class="text-green-500 mr-2">✔</span> <strong>3 parcelles</strong> maximum</li>
+                                    <li class="flex items-center"><span class="text-green-500 mr-2">✔</span> Suivi des pesées</li>
+                                    <li class="flex items-center"><span class="text-green-500 mr-2">✔</span> Export Excel</li>
+                                </ul>
+                                <a href="#" id="cta-signup-demo" class="mt-8 block w-full text-center bg-gray-200 text-gray-800 font-bold py-3 rounded-lg hover:bg-gray-300">Commencer</a>
+                            </div>
+                            <div class="border-2 border-green-500 rounded-xl p-8 relative">
+                                <span class="absolute top-0 -translate-y-1/2 bg-green-500 text-white text-sm font-bold px-3 py-1 rounded-full">Recommandé</span>
+                                <h3 class="text-2xl font-bold">Pro</h3>
+                                <p class="text-gray-500 mt-2">Pour une gestion complète de votre récolte.</p>
+                                <p class="text-4xl font-extrabold my-6">5€ <span class="text-xl font-normal text-gray-500">/ mois</span></p>
+                                 <ul class="space-y-3 text-gray-700">
+                                    <li class="flex items-center"><span class="text-green-500 mr-2">✔</span> Parcelles <strong>illimitées</strong></li>
+                                    <li class="flex items-center"><span class="text-green-500 mr-2">✔</span> Partage de parcelles</li>
+                                    <li class="flex items-center"><span class="text-green-500 mr-2">✔</span> Toutes les fonctions de la démo</li>
+                                </ul>
+                                <a href="#" id="cta-signup-pro" class="mt-8 block w-full text-center bg-green-600 text-white font-bold py-3 rounded-lg hover:bg-green-700">Choisir Pro</a>
+                            </div>
+                        </div>
+                    </div>
+                 </div>
+            </section>
+        </section>
+
+        <!-- Page d'authentification -->
+        <section id="auth-page" class="hidden">
+            <div id="auth-container" class="flex items-center justify-center min-h-[calc(100vh-80px)] bg-gray-50 px-4">
+                <div class="w-full max-w-sm">
+                     <div id="login-form" class="bg-white p-6 rounded-2xl shadow-md space-y-6">
+                        <h2 class="text-2xl font-bold text-center text-gray-800">Connexion</h2>
+                        <p id="auth-message" class="text-blue-600 text-sm text-center hidden"></p>
+                        <p id="login-error" class="text-red-500 text-sm text-center hidden"></p>
+                        <form id="login" class="space-y-4">
+                            <input type="email" id="login-email" required placeholder="Adresse Mail" class="w-full p-3 bg-gray-100 border-2 border-transparent rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500 transition">
+                            <input type="password" id="login-password" required placeholder="Mot de passe" class="w-full p-3 bg-gray-100 border-2 border-transparent rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500 transition">
+                            <button type="submit" class="w-full bg-green-600 text-white font-bold py-3 rounded-lg hover:bg-green-700 transition-all duration-300 transform hover:scale-105">Se connecter</button>
+                        </form>
+                        <div class="text-center text-sm">
+                            <p class="text-gray-600">
+                                <a href="#" id="forgot-password-link" class="font-medium text-green-600 hover:underline">Mot de passe oublié ?</a>
+                            </p>
+                            <p class="text-gray-600 mt-2">
+                                Pas de compte ? <a href="#" id="show-signup" class="font-medium text-green-600 hover:underline">S'inscrire</a>
+                            </p>
+                        </div>
+                    </div>
+                    <div id="signup-form" class="bg-white p-6 rounded-2xl shadow-md space-y-6 hidden">
+                        <h2 class="text-2xl font-bold text-center text-gray-800">Créer un compte</h2>
+                        <p id="signup-error" class="text-red-500 text-sm text-center hidden"></p>
+                        <form id="signup" class="space-y-4">
+                            <input type="text" id="signup-name" required placeholder="Prénom ou Nom" class="w-full p-3 bg-gray-100 border-2 border-transparent rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition">
+                            <input type="email" id="signup-email" required placeholder="Adresse Mail" class="w-full p-3 bg-gray-100 border-2 border-transparent rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition">
+                            <input type="password" id="signup-password" required placeholder="Mot de passe" class="w-full p-3 bg-gray-100 border-2 border-transparent rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition">
+                            <button type="submit" class="w-full bg-blue-600 text-white font-bold py-3 rounded-lg hover:bg-blue-700 transition-all">Créer le compte</button>
+                        </form>
+                        <p class="text-center text-sm text-gray-600">Déjà un compte ? <a href="#" id="show-login" class="font-medium text-blue-600 hover:underline">Se connecter</a></p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Application principale -->
+        <div id="app-page" class="hidden">
+             
+             <!-- Vue "Mes Parcelles" -->
+             <div id="page-field-list" class="pb-24">
+                <header class="bg-white/80 backdrop-blur-sm sticky top-[68px] z-10 p-4 border-b border-gray-200 flex justify-between items-center">
+                    <h1 class="text-xl font-bold text-gray-800">Mes Parcelles</h1>
+                    <button id="add-field-btn" class="bg-green-600 text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-green-700 transition">
+                        + Ajouter Parcelle
+                    </button>
+                </header>
+                <div class="p-4">
+                    <div id="crop-filters-container" class="flex items-center gap-2 overflow-x-auto pb-2 -mx-4 px-4 no-scrollbar"></div>
+                </div>
+                <div id="field-list-container" class="p-4 space-y-3"></div>
+            </div>
+            
+             <!-- Vue "Champs Partagés" -->
+             <div id="page-shared-field-list" class="hidden pb-24">
+                 <header class="bg-white/80 backdrop-blur-sm sticky top-[68px] z-10 p-4 border-b border-gray-200">
+                     <h1 class="text-xl font-bold text-gray-800">Champs Partagés</h1>
+                 </header>
+                 <div id="shared-field-list-container" class="p-4 space-y-3"></div>
+            </div>
+
+            <!-- Vue "Détails de la parcelle" -->
+            <div id="page-field-details" class="hidden pb-24">
+                 <header class="bg-white/80 backdrop-blur-sm sticky top-[68px] z-30 p-4 border-b border-gray-200 flex items-center">
+                    <button id="back-to-list-btn" class="p-2 -ml-2 rounded-full hover:bg-gray-200">
+                        <svg class="w-6 h-6" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M15.75 19.5L8.25 12l7.5-7.5" /></svg>
+                    </button>
+                    <h1 id="details-header-title" class="text-xl font-bold text-gray-800 text-center flex-grow">Détails</h1>
+                    <div class="w-10"></div> 
+                </header>
+                <div class="p-4 space-y-6">
+                    <section id="field-info-cards" class="grid grid-cols-2 gap-3"></section>
+                    <section id="trailers-list-container">
+                        <h2 class="text-lg font-semibold text-gray-700 mb-2">Bennes</h2>
+                        <div id="trailers-list" class="space-y-3"></div>
+                    </section>
+                </div>
+                <button id="add-trailer-fab" class="fixed bottom-20 right-5 z-20 h-14 w-14 bg-green-600 text-white rounded-full flex items-center justify-center shadow-lg transform hover:scale-110 transition-transform">
+                    <svg class="w-7 h-7" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15" /></svg>
+                </button>
+            </div>
+
+            <!-- Barre de navigation inférieure -->
+            <nav class="fixed bottom-0 left-0 right-0 bg-white/80 backdrop-blur-sm border-t border-gray-200 z-40 h-16 flex justify-around items-center">
+                <button id="nav-fields" class="nav-btn p-2 text-green-600 active">
+                    <svg class="w-7 h-7" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M3.75 6A2.25 2.25 0 016 3.75h2.25A2.25 2.25 0 0110.5 6v2.25a2.25 2.25 0 01-2.25 2.25H6a2.25 2.25 0 01-2.25-2.25V6zM3.75 15.75A2.25 2.25 0 016 13.5h2.25a2.25 2.25 0 012.25 2.25V18a2.25 2.25 0 01-2.25 2.25H6A2.25 2.25 0 013.75 18v-2.25zM13.5 6a2.25 2.25 0 012.25-2.25H18A2.25 2.25 0 0120.25 6v2.25A2.25 2.25 0 0118 10.5h-2.25a2.25 2.25 0 01-2.25-2.25V6zM13.5 15.75a2.25 2.25 0 012.25-2.25H18a2.25 2.25 0 012.25 2.25V18A2.25 2.25 0 0118 20.25h-2.25A2.25 2.25 0 0113.5 18v-2.25z" /></svg>
+                </button>
+                 <button id="nav-shared-fields" class="nav-btn p-2 text-gray-500 hidden">
+                    <svg class="w-7 h-7" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M18 18.72a9.094 9.094 0 003.741-.479 3 3 0 00-4.682-2.72m-7.5-2.952a4.5 4.5 0 014.5 0m-4.5 0a4.5 4.5 0 00-4.5 0m4.5 0V19.5m0-2.253a4.5 4.5 0 01-1.07-2.119M7.5 14.25a4.5 4.5 0 00-4.5 0v3.75a4.5 4.5 0 004.5 0V14.25z" /></svg>
+                </button>
+                <button id="nav-summary" class="nav-btn p-2 text-gray-500">
+                    <svg class="w-7 h-7" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M3 13.125C3 12.504 3.504 12 4.125 12h2.25c.621 0 1.125.504 1.125 1.125v6.75C7.5 20.496 6.996 21 6.375 21h-2.25A2.625 2.625 0 011.5 18.375V17.25c0-1.01.84-1.838 1.875-1.875h.375zM9.75 8.625c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125v11.25c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 01-1.125-1.125V8.625zM16.5 4.125c0-.621.504-1.125 1.125-1.125h2.25C20.496 3 21 3.504 21 4.125v15.75c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 01-1.125-1.125V4.125z" /></svg>
+                </button>
+                <button id="nav-export" class="nav-btn p-2 text-gray-500">
+                    <svg class="w-7 h-7" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3" /></svg>
+                </button>
+            </nav>
+        </div>
+    </main>
+    
+    <!-- Conteneur de Modal Global -->
+    <div id="modal-container" class="hidden">
+        <div id="modal-backdrop" class="fixed inset-0 bg-black bg-opacity-40 z-40"></div>
+        <div id="modal-content" class="fixed bottom-0 left-0 right-0 bg-white rounded-t-2xl shadow-xl p-4 pb-6 z-50 max-w-lg mx-auto">
+        </div>
+    </div>
+    
+    <!-- Toast Global -->
+    <div id="toast" class="hidden fixed bottom-20 sm:bottom-4 left-1/2 -translate-x-1/2 bg-gray-800 text-white py-2 px-5 rounded-full shadow-lg z-50">
+        <p id="toast-message"></p>
+    </div>
+
+    <script type="module" src="firebase-config.js"></script>
+    <script type="module" src="harvest.js"></script>
+    <script type="module" src="sharing.js"></script>
+    <script type="module" src="app.js"></script>
+
+</body>
+</html>

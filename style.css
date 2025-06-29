@@ -1,0 +1,34 @@
+body {
+    font-family: 'Inter', sans-serif;
+    background-color: #f3f4f6; /* Set a default background for the body */
+}
+
+/* On utilise .hidden pour cacher les éléments */
+.hidden {
+    display: none;
+}
+
+/* Style pour les animations de modal */
+.modal-enter {
+    animation: fadeIn 0.3s ease-out;
+}
+.modal-leave {
+    animation: fadeOut 0.3s ease-in forwards;
+}
+@keyframes fadeIn {
+    from { opacity: 0; transform: translateY(-20px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+@keyframes fadeOut {
+    from { opacity: 1; transform: translateY(0); }
+    to { opacity: 0; transform: translateY(-20px); }
+}
+
+/* Style pour l'animation du toast */
+.toast-enter {
+    animation: slideIn 0.5s ease-out;
+}
+@keyframes slideIn {
+    from { transform: translateY(100%); opacity: 0; }
+    to { transform: translateY(0); opacity: 1; }
+}
