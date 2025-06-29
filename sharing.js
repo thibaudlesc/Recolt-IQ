@@ -1,13 +1,14 @@
 // sharing.js
 
 import { db, doc, getDoc, updateDoc, setDoc, onSnapshot, collection, addDoc, query, where, deleteDoc, arrayUnion, collectionGroup } from './firebase-config.js';
-import { showToast, showConfirmationModal, navigateToPage } from './harvest.js'; // Réutilisation des fonctions
+// On importe maintenant 'updateActiveNav' et on l'utilisera pour garder le code propre
+import { showToast, showConfirmationModal, navigateToPage, updateActiveNav } from './harvest.js'; 
 
 // --- DOM ELEMENT SELECTION ---
 const sharedFieldsPage = document.getElementById('page-shared-field-list');
 const navSharedFieldsBtn = document.getElementById('nav-shared-fields');
 const myFieldsPage = document.getElementById('page-field-list');
-const navMyFieldsBtn = document.getElementById('nav-fields'); // Bouton "Mes Parcelles" existant
+const navMyFieldsBtn = document.getElementById('nav-fields');
 const sharedFieldListContainer = document.getElementById('shared-field-list-container');
 
 // --- GLOBAL STATE ---
@@ -36,21 +37,23 @@ function setupSharingEventListeners() {
         if (card) {
             const ownerId = card.dataset.ownerId;
             const fieldId = card.dataset.key;
-            // Passe le ownerId à la page de détails pour savoir où chercher les données
             navigateToPage('details', fieldId, ownerId);
         }
     });
 }
 
 /**
+ * [MODIFIÉ]
  * Affiche la vue sélectionnée ("Mes Parcelles" ou "Champs Partagés")
+ * et met à jour la navigation active en utilisant la fonction centralisée.
  * @param {string} viewName - 'my-fields' ou 'shared-fields'
  */
 function switchView(viewName) {
     myFieldsPage.classList.toggle('hidden', viewName !== 'my-fields');
     sharedFieldsPage.classList.toggle('hidden', viewName !== 'shared-fields');
-    navMyFieldsBtn.classList.toggle('active', viewName === 'my-fields');
-    navSharedFieldsBtn.classList.toggle('active', viewName === 'shared-fields');
+    
+    const navId = viewName === 'my-fields' ? 'fields' : 'shared-fields';
+    updateActiveNav(navId);
 }
 
 /**

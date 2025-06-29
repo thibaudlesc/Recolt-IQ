@@ -95,6 +95,28 @@ export function navigateToPage(page, key = null, ownerId = null) {
     }
 }
 
+/**
+ * [NOUVELLE FONCTION]
+ * Met à jour le bouton de navigation actif dans la barre inférieure.
+ * C'est la fonction qui manquait et causait l'erreur.
+ * @param {string} activeView - L'identifiant de la vue active ('fields', 'shared-fields', etc.)
+ */
+export function updateActiveNav(activeView) {
+    // Désactiver tous les boutons de la barre de navigation
+    document.querySelectorAll('.nav-btn').forEach(btn => {
+        btn.classList.remove('active', 'text-green-600');
+        btn.classList.add('text-gray-500');
+    });
+
+    // Activer le bouton correspondant à la vue actuelle
+    const buttonToActivate = document.getElementById(`nav-${activeView}`);
+    if (buttonToActivate) {
+        buttonToActivate.classList.add('active', 'text-green-600');
+        buttonToActivate.classList.remove('text-gray-500');
+    }
+}
+
+
 // --- RENDU DE L'INTERFACE UTILISATEUR ---
 
 function displayCropFilters() {
