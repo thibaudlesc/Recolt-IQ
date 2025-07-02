@@ -1,9 +1,9 @@
 // harvest.js
 
-import { db, doc, getDoc, updateDoc, onSnapshot, collection, addDoc, query, where, deleteDoc, getDocs } from './firebase-config.js';
+import { db, doc, getDoc, updateDoc, onSnapshot, collection, addDoc, query, where, deleteDoc } from './firebase-config.js';
 import { generateShareLink } from './sharing.js';
 
-// --- SÉLECTION DES ÉLÉMENTS DU DOM (Inchangé) ---
+// --- SÉLECTION DES ÉLÉMENTS DU DOM ---
 const pageFieldList = document.getElementById('page-field-list');
 const pageSharedFieldList = document.getElementById('page-shared-field-list');
 const pageFieldDetails = document.getElementById('page-field-details');
@@ -15,6 +15,7 @@ const fieldInfoCards = document.getElementById('field-info-cards');
 const trailersListContainer = document.getElementById('trailers-list');
 const addTrailerFab = document.getElementById('add-trailer-fab');
 const navFieldsBtn = document.getElementById('nav-fields');
+const navSharedFieldsBtn = document.getElementById('nav-shared-fields');
 const navSummaryBtn = document.getElementById('nav-summary');
 const navExportBtn = document.getElementById('nav-export');
 const modalContainer = document.getElementById('modal-container');
@@ -24,7 +25,7 @@ const toastMessage = document.getElementById('toast-message');
 const addFieldBtn = document.getElementById('add-field-btn');
 const premiumBadge = document.getElementById('premium-badge');
 
-// --- ÉTAT GLOBAL (Inchangé) ---
+// --- ÉTAT GLOBAL ---
 let currentUser = null;
 let userProfile = {};
 let harvestData = {};
@@ -34,9 +35,8 @@ let currentFieldOwnerId = null;
 let selectedCrops = [];
 let unsubscribeFields;
 let unsubscribeTrailerNames;
-let unsubscribeTrailers; // Ajout pour se désabonner des écouteurs de bennes
 let onConfirmAction = null;
-let currentView = 'my-fields';
+let currentView = 'my-fields'; // 'my-fields' ou 'shared-fields'
 
 // --- INITIALISATION ---
 export function initHarvestApp(user, profile) {
@@ -90,12 +90,12 @@ export function navigateToPage(page, key = null, ownerId = null) {
     } else if (isSharedFieldsVisible) {
         currentView = 'shared-fields';
         updateActiveNav('shared-fields');
-        // Le chargement et l'affichage sont gérés par `loadSharedFields` dans sharing.js
+        // Le chargement des données est géré par onSnapshot dans sharing.js
     } else if (isDetailsVisible && key) {
         currentFieldKey = key;
         currentFieldOwnerId = ownerId || currentUser.uid;
         // Maintient l'onglet de navigation actif correct lors de la consultation des détails
-        updateActiveNav(currentView === 'my-fields' ? 'fields' : 'shared-fields');
+        updateActiveNav(currentView);
         displayFieldDetails(key, currentFieldOwnerId);
     }
 }
@@ -172,34 +172,25 @@ function displayFieldList() {
 }
 
 async function displayFieldDetails(fieldKey, ownerId) {
-    if (unsubscribeTrailers) unsubscribeTrailers(); // Se désabonner de l'écouteur précédent
-
+    // On s'assure de lire les données depuis le bon propriétaire (le sien ou celui du partage)
     const fieldDocRef = doc(db, "users", ownerId, "fields", fieldKey);
-    const fieldDocSnap = await getDoc(fieldDocRef);
-
-    if (!fieldDocSnap.exists()) {
-        showToast("Parcelle introuvable.");
-        navigateToPage(currentView === 'my-fields' ? 'list' : 'shared-list');
-        return;
-    }
-
-    const field = { id: fieldDocSnap.id, ...fieldDocSnap.data() };
-    detailsHeaderTitle.textContent = field.name;
-
-    // Gestion des permissions (simplifiée)
-    const isOwner = ownerId === currentUser.uid;
-    const isSharedUser = Array.isArray(field.accessControl) && field.accessControl.includes(currentUser.uid);
-    const canManageTrailers = isOwner || isSharedUser;
-    addTrailerFab.classList.toggle('hidden', !canManageTrailers);
-
-    // Écoute en temps réel de la sous-collection 'trailers'
-    const trailersColRef = collection(db, "users", ownerId, "fields", fieldKey, "trailers");
-    unsubscribeTrailers = onSnapshot(query(trailersColRef), (trailersSnapshot) => {
-        const trailers = trailersSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+    
+    // Utilise onSnapshot pour des mises à jour en temps réel dans les détails
+    onSnapshot(fieldDocRef, (fieldDocSnap) => {
+        if (!fieldDocSnap.exists()) {
+            showToast("Impossible de charger les détails de cette parcelle.");
+            navigateToPage(currentView === 'my-fields' ? 'list' : 'shared-list');
+            return;
+        }
+        const field = { id: fieldDocSnap.id, ...fieldDocSnap.data() };
         
-        const { totalWeight, yield: yieldValue, totalBaleCount } = calculateTotals(field, trailers);
+        detailsHeaderTitle.textContent = field.name;
+        const { totalWeight, yield: yieldValue, totalBaleCount } = calculateTotals(field);
 
-        // Mettre à jour les cartes d'information
+        // La permission d'édition est donnée si on est propriétaire ou si on a les droits d'écriture (logique simplifiée ici)
+        const canEdit = ownerId === currentUser.uid || (field.accessControl && field.accessControl.includes(currentUser.uid));
+        addTrailerFab.classList.toggle('hidden', !canEdit);
+
         const isLinCrop = field.crop && field.crop.toLowerCase().includes('lin');
         let lastCardHTML = isLinCrop 
             ? `<div class="bg-white p-3 rounded-xl shadow-sm text-center"><h3 class="text-xs font-medium text-gray-500">Total Bottes</h3><p class="mt-1 text-lg font-semibold">${totalBaleCount.toLocaleString('fr-FR')}</p></div>`
@@ -212,62 +203,83 @@ async function displayFieldDetails(fieldKey, ownerId) {
             ${lastCardHTML}
         `;
 
-        // Afficher la liste des bennes
         trailersListContainer.innerHTML = '';
+        const trailers = (field.trailers || []).map((t, i) => ({ ...t, originalIndex: i }));
         if (trailers.length === 0) {
             trailersListContainer.innerHTML = `<p class="text-center text-gray-500 mt-6">Aucune benne enregistrée.</p>`;
             return;
         }
 
-        trailers.sort((a, b) => (b.createdAt?.toMillis() || 0) - (a.createdAt?.toMillis() || 0)); // Trier par date
-        trailers.forEach(trailer => {
+        trailers.reverse().forEach(trailer => {
             const card = document.createElement('div');
             card.className = 'bg-white p-4 rounded-xl shadow-sm border border-gray-200';
-            card.innerHTML = createTrailerCardHTML(trailer, canManageTrailers);
+            card.innerHTML = createTrailerCardHTML(trailer, canEdit);
             trailersListContainer.appendChild(card);
         });
+
+    }, (error) => {
+        console.error("Erreur de lecture des détails de la parcelle: ", error);
+        showToast("Erreur de chargement des détails.");
     });
 }
 
 
 function createFieldCardHTML(field) {
-    // Cette fonction est complexe à adapter sans connaître le total des poids à l'avance.
-    // Pour la simplicité, nous allons afficher "..." et le poids sera calculé en entrant dans les détails.
+    const { totalWeight } = calculateTotals(field);
     return `
         <div class="flex justify-between items-center">
             <div class="field-card-content flex-grow cursor-pointer pr-4" data-key="${field.id}" data-owner-id="${field.ownerId}">
-                <h3 class="font-bold text-lg text-gray-800">${field.name}</h3>
-                <p class="text-sm text-gray-500">${field.crop || 'N/A'} - ${(field.size || 0).toLocaleString('fr-FR')} ha</p>
+                <div class="flex justify-between items-start">
+                    <div>
+                        <h3 class="font-bold text-lg text-gray-800">${field.name}</h3>
+                        <p class="text-sm text-gray-500">${field.crop || 'N/A'}</p>
+                    </div>
+                    <div class="text-right">
+                        <p class="font-bold text-lg text-green-600">${totalWeight.toLocaleString('fr-FR')} kg</p>
+                        <p class="text-sm text-gray-500">${(field.size || 0).toLocaleString('fr-FR')} ha</p>
+                    </div>
+                </div>
             </div>
             <div class="flex items-center gap-0 ml-2 flex-shrink-0">
-                <button class="share-field-btn p-2 text-gray-400 hover:text-green-600" data-key="${field.id}" title="Partager">...</button>
-                <button class="edit-field-btn p-2 text-gray-400 hover:text-blue-600" data-key="${field.id}" title="Modifier">...</button>
-                <button class="delete-field-btn p-2 text-gray-400 hover:text-red-600" data-key="${field.id}" title="Supprimer">...</button>
+                <button class="share-field-btn p-2 text-gray-400 hover:text-green-600 rounded-full hover:bg-gray-100 transition-colors" data-key="${field.id}" title="Partager">
+                    <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M7.217 10.907a2.25 2.25 0 100 4.186m0-4.186c.54.225 1.055.542 1.5.933m-1.5-.933c-.54.225-1.055.542-1.5.933m1.5-.933v2.85m0 0a2.25 2.25 0 100 4.186m0-4.186a2.25 2.25 0 011.5 1.933M16.5 10.5a2.25 2.25 0 11-4.5 0 2.25 2.25 0 014.5 0zM16.5 10.5c0 .59-.143 1.14-.396 1.636m-2.104-1.636a2.25 2.25 0 100 4.186m0-4.186c.54.225 1.055.542 1.5.933m-1.5-.933c-.54.225-1.055.542-1.5.933m1.5-.933v2.85m0 0a2.25 2.25 0 100 4.186m0-4.186a2.25 2.25 0 011.5 1.933" /></svg>
+                </button>
+                <button class="edit-field-btn p-2 text-gray-400 hover:text-blue-600 rounded-full hover:bg-gray-100 transition-colors" data-key="${field.id}" title="Modifier">
+                    <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L6.832 19.82a4.5 4.5 0 01-1.897 1.13l-2.685.8.8-2.685a4.5 4.5 0 011.13-1.897L16.863 4.487zm0 0L19.5 7.125" /></svg>
+                </button>
+                <button class="delete-field-btn p-2 text-gray-400 hover:text-red-600 rounded-full hover:bg-gray-100 transition-colors" data-key="${field.id}" title="Supprimer">
+                    <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 01-2.244 2.077H8.084a2.25 2.25 0 01-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 00-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 013.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 00-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 00-7.5 0" /></svg>
+                </button>
             </div>
         </div>
     `;
 }
 
-function createTrailerCardHTML(trailer, canManage) {
+function createTrailerCardHTML(trailer, canEdit) {
     const netWeight = (trailer.full && trailer.empty) ? trailer.full - trailer.empty : '---';
     const isFinalized = trailer.empty !== null && trailer.empty > 0;
-    const baleInfo = (typeof trailer.baleCount === 'number') ? `<p>Bottes: ${trailer.baleCount}</p>` : '';
+    const baleInfo = (typeof trailer.baleCount === 'number') ? `<p class="text-sm text-gray-500">Bottes: <span class="font-semibold">${trailer.baleCount}</span></p>` : '';
 
-    const editControls = canManage ? `
-        <button class="edit-btn p-2" data-id="${trailer.id}" title="Modifier">...</button>
-        <button class="delete-btn p-2" data-id="${trailer.id}" title="Supprimer">...</button>
+    const editControls = canEdit ? `
+        <button class="edit-btn p-2 text-gray-500 hover:text-blue-600 ml-auto" data-index="${trailer.originalIndex}" title="Modifier"><svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L6.832 19.82a4.5 4.5 0 01-1.897 1.13l-2.685.8.8-2.685a4.5 4.5 0 011.13-1.897L16.863 4.487zm0 0L19.5 7.125" /></svg></button>
+        <button class="delete-btn p-2 text-gray-500 hover:text-red-600" data-index="${trailer.originalIndex}" title="Supprimer"><svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 01-2.244 2.077H8.084a2.25 2.25 0 01-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 00-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 013.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 00-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 00-7.5 0" /></svg></button>
     ` : '';
     
     return `
-        <div>
-            <p>${trailer.trailerName || 'Benne'}</p>
-            <p>${typeof netWeight === 'number' ? netWeight.toLocaleString('fr-FR') : '??'} kg</p>
-            <p>Plein: ${trailer.full || '---'} / Vide: ${trailer.empty || '---'}</p>
-            ${baleInfo}
+        <div class="flex justify-between items-center">
+            <div>
+                <p class="text-sm text-gray-500 font-semibold">${trailer.trailerName || 'Benne'}</p>
+                <p class="font-bold text-xl text-gray-800">${typeof netWeight === 'number' ? netWeight.toLocaleString('fr-FR') : '??'} kg</p>
+            </div>
+            <div class="text-right">
+                <p class="text-sm">Plein: <span class="font-semibold">${trailer.full ? trailer.full.toLocaleString('fr-FR') : '---'}</span></p>
+                <p class="text-sm">Vide: <span class="font-semibold">${trailer.empty ? trailer.empty.toLocaleString('fr-FR') : '---'}</span></p>
+            </div>
         </div>
-        <div>
-            ${canManage && !isFinalized ? `<button class="finalize-btn" data-id="${trailer.id}">Finaliser</button>` : ''}
-            ${isFinalized ? `<span>Terminé</span>` : ''}
+        ${baleInfo ? `<div class="mt-2 pt-2 border-t border-gray-100">${baleInfo}</div>` : ''}
+        <div class="flex items-center gap-2 mt-3 pt-3 border-t border-gray-100">
+            ${canEdit && !isFinalized ? `<button class="finalize-btn flex-1 bg-blue-500 text-white px-3 py-2 text-sm font-semibold rounded-lg" data-index="${trailer.originalIndex}">Finaliser</button>` : ''}
+            ${isFinalized ? `<span class="flex-1 text-center text-green-600 font-semibold text-sm">Terminé</span>` : ''}
             ${editControls}
         </div>
     `;
@@ -547,10 +559,14 @@ async function handleSaveNewField() {
     try {
         const fieldsCollectionRef = collection(db, 'users', currentUser.uid, 'fields');
         
-        await addDoc(collection(db, 'users', currentUser.uid, 'fields'), { 
-            name, crop, size, 
-            ownerId: currentUser.uid,
-            accessControl: [] // Indispensable
+        // CORRECTION : On ajoute ownerId et un tableau accessControl vide
+        await addDoc(fieldsCollectionRef, { 
+            name, 
+            crop, 
+            size, 
+            trailers: [], 
+            ownerId: currentUser.uid,    // Ajouté pour la cohérence
+            accessControl: []            // Ajouté : Champ indispensable pour les partages
         });
 
         showToast(`Parcelle "${name}" ajoutée !`);
@@ -590,54 +606,81 @@ async function handleSaveFieldEdit() {
 
 async function handleConfirmWeight() {
     const weightInput = document.getElementById('weight-input');
+    const errorEl = document.getElementById('weight-modal-error');
     const weight = parseInt(weightInput.value);
     const mode = weightInput.dataset.mode;
-    const trailerId = weightInput.dataset.id; // On utilise l'ID du document benne
+    const index = parseInt(weightInput.dataset.index);
 
-    if (isNaN(weight) || weight <= 0) { /* ...gestion erreur... */ return; }
+    if (isNaN(weight) || weight <= 0) {
+        errorEl.textContent = "Veuillez entrer un poids valide.";
+        errorEl.classList.remove('hidden');
+        return;
+    }
+    errorEl.classList.add('hidden');
+
+    const fieldDocRef = doc(db, "users", currentFieldOwnerId, "fields", currentFieldKey);
+    const fieldDocSnap = await getDoc(fieldDocRef);
+    if(!fieldDocSnap.exists()) return showToast("Erreur : parcelle introuvable.");
+
+    const fieldData = fieldDocSnap.data();
+    const trailers = fieldData.trailers || [];
 
     if (mode === 'full') {
-        const trailerName = document.getElementById('trailer-name-select').value;
-        if (!trailerName) { /* ...gestion erreur... */ return; }
+        const trailerSelect = document.getElementById('trailer-name-select');
+        const trailerName = trailerSelect.value;
+        if (!trailerName) {
+            errorEl.textContent = "Veuillez sélectionner un nom de benne.";
+            errorEl.classList.remove('hidden');
+            return;
+        }
 
-        const newTrailer = { 
-            trailerName,
-            full: weight, 
-            empty: null, 
-            createdAt: new Date() // Important pour le tri
-        };
+        const newTrailer = { full: weight, empty: null, trailerName: trailerName };
         const baleCountInput = document.getElementById('bale-count-input');
         if (baleCountInput) newTrailer.baleCount = parseInt(baleCountInput.value) || 0;
 
-        // Ajoute un NOUVEAU DOCUMENT dans la sous-collection
-        const trailersColRef = collection(db, "users", currentFieldOwnerId, "fields", currentFieldKey, "trailers");
-        await addDoc(trailersColRef, newTrailer);
+        trailers.push(newTrailer);
 
-    } else if (mode === 'empty' && trailerId) {
-        // Met à jour un DOCUMENT EXISTANT dans la sous-collection
-        const trailerDocRef = doc(db, "users", currentFieldOwnerId, "fields", currentFieldKey, "trailers", trailerId);
-        await updateDoc(trailerDocRef, { empty: weight });
+    } else if (mode === 'empty' && index >= 0) {
+        if(trailers[index]) {
+            trailers[index].empty = weight;
+        }
     }
-    
-    showToast('Pesée enregistrée.');
-    closeModal();
+
+    try {
+        await updateDoc(fieldDocRef, { trailers: trailers });
+        showToast('Pesée enregistrée.');
+        closeModal();
+    } catch (error) {
+        showToast("Erreur de synchronisation.");
+        console.error("Firestore update error:", error);
+    }
 }
 
 async function handleSaveEdit() {
-    const trailerId = document.getElementById('edit-weight-full').dataset.id;
+    const index = parseInt(document.getElementById('edit-weight-full').dataset.index);
     const newFull = parseInt(document.getElementById('edit-weight-full').value);
     const newEmpty = parseInt(document.getElementById('edit-weight-empty').value);
 
-    const trailerDocRef = doc(db, "users", currentFieldOwnerId, "fields", currentFieldKey, "trailers", trailerId);
-    const dataToUpdate = {};
-    if (!isNaN(newFull) && newFull > 0) dataToUpdate.full = newFull;
-    if (!isNaN(newEmpty) && newEmpty > 0) dataToUpdate.empty = newEmpty;
+    const fieldDocRef = doc(db, "users", currentFieldOwnerId, "fields", currentFieldKey);
+    const fieldDocSnap = await getDoc(fieldDocRef);
+    if(!fieldDocSnap.exists()) return showToast("Erreur : parcelle introuvable.");
 
-    await updateDoc(trailerDocRef, dataToUpdate);
-    showToast('Benne modifiée.');
-    closeModal();
+    const fieldData = fieldDocSnap.data();
+    const trailers = fieldData.trailers || [];
+    const trailer = trailers[index];
+
+    if (!isNaN(newFull) && newFull > 0) trailer.full = newFull;
+    if (!isNaN(newEmpty) && newEmpty > 0) trailer.empty = newEmpty;
+
+    try {
+        await updateDoc(fieldDocRef, { trailers: trailers });
+        showToast('Benne modifiée.');
+        closeModal();
+    } catch (error) {
+        showToast("Erreur de synchronisation.");
+        console.error("Firestore update error:", error);
+    }
 }
-
 
 function handleDeleteField(fieldKey) {
     const field = harvestData[fieldKey];
@@ -660,13 +703,27 @@ function handleDeleteField(fieldKey) {
     showConfirmationModal(message, action);
 }
 
-function handleDeleteTrailer(trailerId) {
+async function handleDeleteTrailer(index) {
+    const fieldDocRef = doc(db, "users", currentFieldOwnerId, "fields", currentFieldKey);
+    const fieldDocSnap = await getDoc(fieldDocRef);
+    if(!fieldDocSnap.exists()) return showToast("Erreur : parcelle introuvable.");
+
+    const fieldData = fieldDocSnap.data();
+    const trailers = fieldData.trailers || [];
+    const trailer = trailers[index];
+    const message = `Êtes-vous sûr de vouloir supprimer la pesée de "${trailer.trailerName}" ?`;
+
     const action = async () => {
-        const trailerDocRef = doc(db, "users", currentFieldOwnerId, "fields", currentFieldKey, "trailers", trailerId);
-        await deleteDoc(trailerDocRef);
-        showToast('Pesée supprimée.');
+        trailers.splice(index, 1);
+        try {
+            await updateDoc(fieldDocRef, { trailers: trailers });
+            showToast('Pesée supprimée.');
+        } catch (error) {
+            showToast("Erreur de suppression.");
+            console.error("Firestore delete error:", error);
+        }
     };
-    showConfirmationModal("Êtes-vous sûr de vouloir supprimer cette pesée ?", action);
+    showConfirmationModal(message, action);
 }
 
 async function handleAddNewTrailerName() {
@@ -691,13 +748,13 @@ async function handleAddNewTrailerName() {
 
 function setupEventListeners() {
     backToListBtn.addEventListener('click', () => {
+        // Le retour se fait vers la liste d'où l'on vient (la sienne ou celle des partages)
         navigateToPage(currentView === 'my-fields' ? 'list' : 'shared-list');
     });
 
     addFieldBtn.addEventListener('click', showAddFieldModal);
     addTrailerFab.addEventListener('click', () => { if (currentFieldKey) showWeightModal('full'); });
     
-    navFieldsBtn.addEventListener('click', () => navigateToPage('list'));
     navSummaryBtn.addEventListener('click', showGlobalResults);
     navExportBtn.addEventListener('click', exportToExcel);
 
@@ -718,11 +775,10 @@ function setupEventListeners() {
         const editBtn = e.target.closest('.edit-btn');
         const deleteBtn = e.target.closest('.delete-btn');
         
-        if (finalizeBtn) return showWeightModal('empty', finalizeBtn.dataset.id);
-        if (editBtn) return showEditModal(editBtn.dataset.id);
-        if (deleteBtn) return handleDeleteTrailer(deleteBtn.dataset.id);
+        if (finalizeBtn) return showWeightModal('empty', parseInt(finalizeBtn.dataset.index));
+        if (editBtn) return showEditModal(parseInt(editBtn.dataset.index));
+        if (deleteBtn) return handleDeleteTrailer(parseInt(deleteBtn.dataset.index));
     });
-    
     
     modalContainer.addEventListener('click', (e) => {
         if (e.target.id === 'modal-backdrop') closeModal();
@@ -746,11 +802,11 @@ function createFilterButton(text, crop, isActive) {
     return button;
 }
 
-function calculateTotals(field, trailers) {
-    if (!field || !trailers) return { totalWeight: 0, yield: 0, totalBaleCount: 0 };
+function calculateTotals(field) {
+    if (!field || !field.trailers) return { totalWeight: 0, yield: 0, totalBaleCount: 0 };
     
-    const totalWeight = trailers.reduce((sum, t) => (t.full && t.empty) ? sum + (t.full - t.empty) : sum, 0);
-    const totalBaleCount = trailers.reduce((sum, t) => sum + (Number(t.baleCount) || 0), 0);
+    const totalWeight = field.trailers.reduce((sum, t) => (t.full && t.empty) ? sum + (t.full - t.empty) : sum, 0);
+    const totalBaleCount = field.trailers.reduce((sum, t) => sum + (Number(t.baleCount) || 0), 0);
     const yieldValue = field.size > 0 ? (totalWeight / field.size) / 100 : 0;
     
     return { totalWeight, yield: yieldValue, totalBaleCount };

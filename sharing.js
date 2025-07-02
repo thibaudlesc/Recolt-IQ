@@ -1,64 +1,44 @@
 // sharing.js
 
-import { 
-    db, 
-    doc, 
-    getDoc, 
-    updateDoc, 
-    setDoc, 
-    onSnapshot, 
-    query, 
-    where, 
-    deleteDoc, 
-    arrayUnion, 
-    collectionGroup 
-} from './firebase-config.js';
+import { db, doc, getDoc, updateDoc, setDoc, onSnapshot, collection, addDoc, query, where, deleteDoc, arrayUnion, collectionGroup } from './firebase-config.js';
 import { showToast, navigateToPage } from './harvest.js';
 
 // --- SÉLECTION DES ÉLÉMENTS DU DOM ---
 const sharedFieldListContainer = document.getElementById('shared-field-list-container');
-const navSharedFieldsBtn = document.getElementById('nav-shared-fields');
-
 
 // --- ÉTAT GLOBAL ---
 let currentUser = null;
 let unsubscribeSharedFields = null;
 
 /**
- * Initialise le module de partage et charge les parcelles partagées.
+ * Initialise le module de partage.
  * @param {import("firebase/auth").User} user - L'objet utilisateur de Firebase.
  */
 export function initSharing(user) {
     currentUser = user;
     if (unsubscribeSharedFields) {
-        unsubscribeSharedFields(); // Se désabonne de l'ancien écouteur pour éviter les fuites de mémoire
+        unsubscribeSharedFields();
     }
     loadSharedFields();
-    
-    // Ajout de l'écouteur de clic pour la navigation
-    navSharedFieldsBtn.addEventListener('click', () => navigateToPage('shared-list'));
 }
 
 /**
- * Génère un lien de partage unique et sécurisé pour une parcelle.
+ * Génère un lien de partage unique pour une parcelle.
  * @param {string} fieldId - L'ID de la parcelle à partager.
  */
 export async function generateShareLink(fieldId) {
     if (!currentUser) return;
 
     try {
-        // Crée un jeton unique et temporaire
         const token = `token_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
         const tokenDocRef = doc(db, "shareTokens", token);
 
-        // Enregistre le jeton dans Firestore avec les informations nécessaires
         await setDoc(tokenDocRef, {
             ownerId: currentUser.uid,
             fieldId: fieldId,
             createdAt: new Date()
         });
 
-        // Construit l'URL de partage complète
         const shareUrl = `${window.location.origin}${window.location.pathname}?token=${token}`;
         showShareLinkModal(shareUrl);
 
@@ -69,7 +49,7 @@ export async function generateShareLink(fieldId) {
 }
 
 /**
- * Affiche une modale avec le lien de partage et un bouton pour le copier.
+ * Affiche une modale avec le lien de partage.
  * @param {string} url - Le lien de partage à afficher.
  */
 function showShareLinkModal(url) {
@@ -79,10 +59,10 @@ function showShareLinkModal(url) {
 
     modalContent.innerHTML = `
         <h3 class="text-xl font-semibold mb-4 text-center">Partager la parcelle</h3>
-        <p class="text-gray-600 text-center mb-4">Envoyez ce lien à la personne avec qui vous souhaitez partager. Le lien est à usage unique et expirera.</p>
+        <p class="text-gray-600 text-center mb-4">Envoyez ce lien à la personne avec qui vous souhaitez partager. Le lien est à usage unique.</p>
         <div class="bg-gray-100 p-3 rounded-lg flex items-center justify-between">
             <input id="share-url-input" type="text" readonly value="${url}" class="bg-transparent border-none text-gray-700 text-sm flex-grow">
-            <button id="copy-share-url-btn" class="ml-2 px-4 py-2 bg-green-600 text-white text-sm font-semibold rounded-lg hover:bg-green-700">Copier</button>
+            <button id="copy-share-url-btn" class="ml-2 px-4 py-2 bg-blue-500 text-white text-sm font-semibold rounded-lg hover:bg-blue-600">Copier</button>
         </div>
         <button id="close-share-modal-btn" class="mt-6 w-full px-6 py-3 bg-gray-200 text-gray-800 rounded-lg">Fermer</button>
     `;
@@ -96,7 +76,6 @@ function showShareLinkModal(url) {
         modalBackdrop.addEventListener('click', closeModal);
     }
 
-    // Gère la copie du lien dans le presse-papiers
     document.getElementById('copy-share-url-btn').addEventListener('click', () => {
         const input = document.getElementById('share-url-input');
         input.select();
@@ -110,56 +89,66 @@ function showShareLinkModal(url) {
 }
 
 /**
- * Traite un jeton de partage lorsqu'un utilisateur arrive via un lien d'invitation.
- * @param {string} token - Le jeton de partage provenant de l'URL.
- * @param {import("firebase/auth").User} user - L'utilisateur connecté qui accepte l'invitation.
+ * Traite un jeton de partage lors de l'arrivée sur le site.
+ * @param {string} token - Le jeton de partage.
+ * @param {import("firebase/auth").User} user - L'utilisateur qui réclame le jeton.
  */
 export async function handleShareToken(token, user) {
-    if (!token || !user) return;
+    console.log("--- DÉBUT DU TRAITEMENT DU JETON DE PARTAGE ---");
+    if (!token || !user) {
+        console.log("Arrêt : Jeton ou utilisateur manquant.", { token, user });
+        return;
+    }
+    
+    console.log(`1. Jeton reçu: ${token}`);
+    console.log(`2. Utilisateur actuel (qui accepte le partage): ${user.uid}`);
 
     const tokenDocRef = doc(db, "shareTokens", token);
-    const url = new URL(window.location); // Pour nettoyer l'URL après traitement
-
     try {
+        console.log(`3. Lecture du document du jeton à l'adresse: /shareTokens/${token}`);
         const tokenDocSnap = await getDoc(tokenDocRef);
 
         if (!tokenDocSnap.exists()) {
+            console.error("ERREUR : Le document du jeton n'existe pas ou a déjà été utilisé.");
             showToast("Ce lien de partage est invalide ou a déjà été utilisé.");
             return;
         }
 
-        const { ownerId, fieldId } = tokenDocSnap.data();
+        const tokenData = tokenDocSnap.data();
+        console.log("4. Données du jeton récupérées:", tokenData);
 
-        // Empêche un utilisateur d'accepter sa propre invitation
-        if (ownerId === user.uid) {
+        if (tokenData.ownerId === user.uid) {
+            console.warn("AVERTISSEMENT : L'utilisateur essaie de partager avec lui-même.");
             showToast("Vous ne pouvez pas partager une parcelle avec vous-même.");
-            await deleteDoc(tokenDocRef); // Supprime le jeton inutile
+            await deleteDoc(tokenDocRef);
             return;
         }
         
-        const fieldDocRef = doc(db, "users", ownerId, "fields", fieldId);
-        
-        // Opération critique : ajoute l'UID de l'invité au tableau de contrôle d'accès de la parcelle.
-        // C'est cette opération qui est validée par les nouvelles règles de sécurité.
+        const fieldDocRef = doc(db, "users", tokenData.ownerId, "fields", tokenData.fieldId);
+        console.log(`5. Préparation de la mise à jour de la parcelle à l'adresse: ${fieldDocRef.path}`);
+        console.log(`   -> Ajout de l'UID '${user.uid}' au tableau 'accessControl'.`);
+
+        // C'est ici que l'erreur se produit probablement.
         await updateDoc(fieldDocRef, {
             accessControl: arrayUnion(user.uid)
         });
 
-        // Le partage a réussi, on supprime le jeton à usage unique.
+        console.log("6. SUCCÈS : La parcelle a été mise à jour.");
+
+        console.log("7. Suppression du jeton utilisé...");
         await deleteDoc(tokenDocRef);
+        console.log("8. Jeton supprimé.");
         
-        showToast("Accès accordé à la parcelle !");
-        navigateToPage('shared-list'); // Redirige l'utilisateur vers la liste des partages
+        showToast(`Accès accordé à la parcelle.`);
+        navigateToPage('shared-list');
 
     } catch (error) {
-        console.error("Erreur lors du traitement du jeton de partage:", error);
-        if (error.code === 'permission-denied') {
-            showToast("Erreur de permission. Impossible d'accepter le partage.");
-        } else {
-            showToast("Une erreur est survenue lors de l'acceptation du partage.");
-        }
+        // Affiche l'erreur complète pour un débogage détaillé.
+        console.error("ERREUR FINALE lors du traitement du jeton :", error);
+        showToast("Une erreur est survenue lors de l'acceptation du partage.");
     } finally {
-        // Nettoie toujours le jeton de l'URL pour éviter de le traiter à nouveau.
+        console.log("--- FIN DU TRAITEMENT DU JETON DE PARTAGE ---");
+        const url = new URL(window.location);
         url.searchParams.delete('token');
         window.history.replaceState({}, document.title, url.toString());
     }
@@ -167,22 +156,21 @@ export async function handleShareToken(token, user) {
 
 
 /**
- * Charge et affiche en temps réel les parcelles qui ont été partagées avec l'utilisateur actuel.
+ * Charge et affiche les parcelles partagées avec l'utilisateur actuel en temps réel.
  */
 function loadSharedFields() {
     if (!currentUser) return;
 
-    // Crée une requête qui recherche dans tous les documents 'fields' de tous les utilisateurs
-    // ceux où notre UID se trouve dans le tableau 'accessControl'.
     const q = query(collectionGroup(db, 'fields'), where('accessControl', 'array-contains', currentUser.uid));
 
     unsubscribeSharedFields = onSnapshot(q, async (snapshot) => {
+        sharedFieldListContainer.innerHTML = ''; 
+
         if (snapshot.empty) {
             sharedFieldListContainer.innerHTML = `<p class="text-center text-gray-500 mt-8">Aucune parcelle n'a été partagée avec vous.</p>`;
             return;
         }
 
-        // Utilise Promise.all pour récupérer les noms des propriétaires de manière asynchrone
         const fieldCardPromises = snapshot.docs.map(async (fieldDoc) => {
             const field = { id: fieldDoc.id, ...fieldDoc.data() };
             try {
@@ -190,9 +178,9 @@ function loadSharedFields() {
                 const ownerName = ownerDoc.exists() ? ownerDoc.data().name : "Propriétaire Inconnu";
                 
                 const card = document.createElement('div');
-                card.className = 'bg-white p-4 rounded-xl shadow-sm border border-gray-200 cursor-pointer hover:bg-gray-50';
+                card.className = 'bg-white p-4 rounded-xl shadow-sm border border-gray-200';
                 card.innerHTML = `
-                    <div class="field-card-content" data-key="${field.id}" data-owner-id="${field.ownerId}">
+                    <div class="field-card-content cursor-pointer" data-key="${field.id}" data-owner-id="${field.ownerId}">
                         <div class="flex justify-between items-start">
                             <div>
                                 <h3 class="font-bold text-lg text-gray-800">${field.name}</h3>
@@ -204,12 +192,11 @@ function loadSharedFields() {
                         </div>
                     </div>
                 `;
-                // Navigue vers les détails de la parcelle partagée au clic
                 card.addEventListener('click', () => navigateToPage('details', field.id, field.ownerId));
                 return card.outerHTML;
             } catch (error) {
                 console.error("Erreur de récupération du propriétaire pour la parcelle:", field.id, error);
-                return null; // Retourne null en cas d'erreur pour ne pas bloquer l'affichage
+                return null;
             }
         });
         
@@ -220,11 +207,10 @@ function loadSharedFields() {
         console.error("Erreur de chargement des champs partagés:", error);
         let userMessage = "";
 
-        // Gère les erreurs courantes de Firestore pour aider au débogage
         if (error.code === 'failed-precondition') {
-            userMessage = `<p class="font-bold">Action requise : Index manquant !</p><p class="text-sm mt-2">La base de données a besoin d'un index pour cette recherche. Ouvrez la console (F12), trouvez l'erreur et <strong>cliquez sur le lien</strong> pour le créer automatiquement.</p>`;
+            userMessage = `<p class="font-bold">Action requise : Index manquant !</p><p class="text-sm mt-2">La base de données a besoin d'un index pour cette recherche. Ouvrez la console (F12), trouvez l'erreur et <strong>cliquez sur le lien</strong> pour le créer.</p>`;
         } else if (error.code === 'permission-denied') {
-             userMessage = `<p class="font-bold">Erreur de Permissions</p><p class="text-sm mt-2">Vos règles de sécurité Firestore ne permettent pas cette opération. Assurez-vous d'avoir publié les dernières règles de sécurité.</p>`;
+             userMessage = `<p class="font-bold">Erreur de Permissions</p><p class="text-sm mt-2">Vos règles de sécurité Firestore ne permettent pas cette opération. Assurez-vous d'avoir publié les dernières règles.</p>`;
         } else {
              userMessage = `<p class="font-bold">La récupération des partages a échoué.</p><p class="text-sm mt-2">Vérifiez votre connexion et réessayez.</p>`;
         }
