@@ -558,7 +558,17 @@ async function handleSaveNewField() {
 
     try {
         const fieldsCollectionRef = collection(db, 'users', currentUser.uid, 'fields');
-        await addDoc(fieldsCollectionRef, { name, crop, size, trailers: [], ownerId: currentUser.uid, accessControl: [] });
+        
+        // CORRECTION : On ajoute ownerId et un tableau accessControl vide
+        await addDoc(fieldsCollectionRef, { 
+            name, 
+            crop, 
+            size, 
+            trailers: [], 
+            ownerId: currentUser.uid,    // Ajouté pour la cohérence
+            accessControl: []            // Ajouté : Champ indispensable pour les partages
+        });
+
         showToast(`Parcelle "${name}" ajoutée !`);
         closeModal();
     } catch (error) {
@@ -566,6 +576,7 @@ async function handleSaveNewField() {
         showToast("Erreur lors de l'ajout de la parcelle.");
     }
 }
+
 
 async function handleSaveFieldEdit() {
     const name = document.getElementById('field-name-input').value.trim();
