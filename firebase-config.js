@@ -15,6 +15,7 @@ import {
     doc, 
     setDoc, 
     getDoc, 
+    getDocs, // <-- AJOUTÉ ICI
     updateDoc, 
     onSnapshot, 
     collection, 
@@ -23,7 +24,8 @@ import {
     where,
     deleteDoc,
     arrayUnion,
-    collectionGroup
+    collectionGroup,
+    serverTimestamp // Ajouté pour la nouvelle logique de date
 } from "https://www.gstatic.com/firebasejs/9.17.1/firebase-firestore.js";
 
 // TODO: Remplacez par la configuration de votre projet Firebase
@@ -55,6 +57,7 @@ export {
     doc, 
     setDoc, 
     getDoc,
+    getDocs, // <-- ET AJOUTÉ ICI
     updateDoc,
     onSnapshot,
     collection,
@@ -63,5 +66,6 @@ export {
     where,
     deleteDoc,
     arrayUnion,
-    collectionGroup
+    collectionGroup,
+    serverTimestamp
 };
