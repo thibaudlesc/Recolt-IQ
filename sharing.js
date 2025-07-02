@@ -9,6 +9,7 @@ const sharedFieldListContainer = document.getElementById('shared-field-list-cont
 // --- ÉTAT GLOBAL ---
 let currentUser = null;
 let unsubscribeSharedFields = null;
+let isSharingInitialized = false; // Pour s'assurer que l'écouteur n'est ajouté qu'une fois
 
 /**
  * Initialise le module de partage.
@@ -19,6 +20,19 @@ export function initSharing(user) {
     if (unsubscribeSharedFields) {
         unsubscribeSharedFields();
     }
+
+    // [CORRECTION] On ajoute un écouteur d'événement délégué une seule fois.
+    // Cet écouteur gérera les clics sur toutes les cartes de parcelles partagées.
+    if (!isSharingInitialized) {
+        sharedFieldListContainer.addEventListener('click', (e) => {
+            const cardContent = e.target.closest('.field-card-content');
+            if (cardContent && cardContent.dataset.key && cardContent.dataset.ownerId) {
+                navigateToPage('details', cardContent.dataset.key, cardContent.dataset.ownerId);
+            }
+        });
+        isSharingInitialized = true;
+    }
+
     loadSharedFields();
 }
 
@@ -128,7 +142,6 @@ export async function handleShareToken(token, user) {
         console.log(`5. Préparation de la mise à jour de la parcelle à l'adresse: ${fieldDocRef.path}`);
         console.log(`   -> Ajout de l'UID '${user.uid}' au tableau 'accessControl'.`);
 
-        // C'est ici que l'erreur se produit probablement.
         await updateDoc(fieldDocRef, {
             accessControl: arrayUnion(user.uid)
         });
@@ -143,7 +156,6 @@ export async function handleShareToken(token, user) {
         navigateToPage('shared-list');
 
     } catch (error) {
-        // Affiche l'erreur complète pour un débogage détaillé.
         console.error("ERREUR FINALE lors du traitement du jeton :", error);
         showToast("Une erreur est survenue lors de l'acceptation du partage.");
     } finally {
@@ -164,8 +176,6 @@ function loadSharedFields() {
     const q = query(collectionGroup(db, 'fields'), where('accessControl', 'array-contains', currentUser.uid));
 
     unsubscribeSharedFields = onSnapshot(q, async (snapshot) => {
-        sharedFieldListContainer.innerHTML = ''; 
-
         if (snapshot.empty) {
             sharedFieldListContainer.innerHTML = `<p class="text-center text-gray-500 mt-8">Aucune parcelle n'a été partagée avec vous.</p>`;
             return;
@@ -177,23 +187,22 @@ function loadSharedFields() {
                 const ownerDoc = await getDoc(doc(db, "users", field.ownerId));
                 const ownerName = ownerDoc.exists() ? ownerDoc.data().name : "Propriétaire Inconnu";
                 
-                const card = document.createElement('div');
-                card.className = 'bg-white p-4 rounded-xl shadow-sm border border-gray-200';
-                card.innerHTML = `
-                    <div class="field-card-content cursor-pointer" data-key="${field.id}" data-owner-id="${field.ownerId}">
-                        <div class="flex justify-between items-start">
-                            <div>
-                                <h3 class="font-bold text-lg text-gray-800">${field.name}</h3>
-                                <p class="text-sm text-gray-500">Partagé par : <span class="font-semibold">${ownerName}</span></p>
-                            </div>
-                            <div class="text-right">
-                                 <p class="text-sm text-gray-500">${field.crop || 'N/A'}</p>
+                // [CORRECTION] On génère juste le HTML. L'écouteur de clic est maintenant sur le conteneur parent.
+                return `
+                    <div class="bg-white p-4 rounded-xl shadow-sm border border-gray-200">
+                        <div class="field-card-content cursor-pointer" data-key="${field.id}" data-owner-id="${field.ownerId}">
+                            <div class="flex justify-between items-start">
+                                <div>
+                                    <h3 class="font-bold text-lg text-gray-800">${field.name}</h3>
+                                    <p class="text-sm text-gray-500">Partagé par : <span class="font-semibold">${ownerName}</span></p>
+                                </div>
+                                <div class="text-right">
+                                     <p class="text-sm text-gray-500">${field.crop || 'N/A'}</p>
+                                </div>
                             </div>
                         </div>
                     </div>
                 `;
-                card.addEventListener('click', () => navigateToPage('details', field.id, field.ownerId));
-                return card.outerHTML;
             } catch (error) {
                 console.error("Erreur de récupération du propriétaire pour la parcelle:", field.id, error);
                 return null;
