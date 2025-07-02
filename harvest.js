@@ -90,12 +90,12 @@ export function navigateToPage(page, key = null, ownerId = null) {
     } else if (isSharedFieldsVisible) {
         currentView = 'shared-fields';
         updateActiveNav('shared-fields');
-        // Le chargement des données est géré par onSnapshot dans sharing.js
+        // Le chargement et l'affichage sont gérés par `loadSharedFields` dans sharing.js
     } else if (isDetailsVisible && key) {
         currentFieldKey = key;
         currentFieldOwnerId = ownerId || currentUser.uid;
         // Maintient l'onglet de navigation actif correct lors de la consultation des détails
-        updateActiveNav(currentView);
+        updateActiveNav(currentView === 'my-fields' ? 'fields' : 'shared-fields');
         displayFieldDetails(key, currentFieldOwnerId);
     }
 }
@@ -172,10 +172,8 @@ function displayFieldList() {
 }
 
 async function displayFieldDetails(fieldKey, ownerId) {
-    // On s'assure de lire les données depuis le bon propriétaire (le sien ou celui du partage)
     const fieldDocRef = doc(db, "users", ownerId, "fields", fieldKey);
     
-    // Utilise onSnapshot pour des mises à jour en temps réel dans les détails
     onSnapshot(fieldDocRef, (fieldDocSnap) => {
         if (!fieldDocSnap.exists()) {
             showToast("Impossible de charger les détails de cette parcelle.");
@@ -187,9 +185,15 @@ async function displayFieldDetails(fieldKey, ownerId) {
         detailsHeaderTitle.textContent = field.name;
         const { totalWeight, yield: yieldValue, totalBaleCount } = calculateTotals(field);
 
-        // La permission d'édition est donnée si on est propriétaire ou si on a les droits d'écriture (logique simplifiée ici)
-        const canEdit = ownerId === currentUser.uid || (field.accessControl && field.accessControl.includes(currentUser.uid));
-        addTrailerFab.classList.toggle('hidden', !canEdit);
+        // --- GESTION DES PERMISSIONS (MODIFIÉ) ---
+        const isOwner = ownerId === currentUser.uid;
+        // Vérifie si l'utilisateur est dans la liste de partage
+        const isSharedUser = Array.isArray(field.accessControl) && field.accessControl.includes(currentUser.uid);
+        // Seul le propriétaire ou un invité peut gérer les bennes
+        const canManageTrailers = isOwner || isSharedUser;
+        
+        // Affiche le bouton "Ajouter une benne" uniquement si l'utilisateur a la permission
+        addTrailerFab.classList.toggle('hidden', !canManageTrailers);
 
         const isLinCrop = field.crop && field.crop.toLowerCase().includes('lin');
         let lastCardHTML = isLinCrop 
@@ -213,7 +217,8 @@ async function displayFieldDetails(fieldKey, ownerId) {
         trailers.reverse().forEach(trailer => {
             const card = document.createElement('div');
             card.className = 'bg-white p-4 rounded-xl shadow-sm border border-gray-200';
-            card.innerHTML = createTrailerCardHTML(trailer, canEdit);
+            // On passe la permission `canManageTrailers` à la fonction de rendu
+            card.innerHTML = createTrailerCardHTML(trailer, canManageTrailers);
             trailersListContainer.appendChild(card);
         });
 
@@ -255,12 +260,13 @@ function createFieldCardHTML(field) {
     `;
 }
 
-function createTrailerCardHTML(trailer, canEdit) {
+function createTrailerCardHTML(trailer, canManage) {
     const netWeight = (trailer.full && trailer.empty) ? trailer.full - trailer.empty : '---';
     const isFinalized = trailer.empty !== null && trailer.empty > 0;
     const baleInfo = (typeof trailer.baleCount === 'number') ? `<p class="text-sm text-gray-500">Bottes: <span class="font-semibold">${trailer.baleCount}</span></p>` : '';
 
-    const editControls = canEdit ? `
+    // Affiche les contrôles (modifier, supprimer) uniquement si l'utilisateur a la permission
+    const editControls = canManage ? `
         <button class="edit-btn p-2 text-gray-500 hover:text-blue-600 ml-auto" data-index="${trailer.originalIndex}" title="Modifier"><svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L6.832 19.82a4.5 4.5 0 01-1.897 1.13l-2.685.8.8-2.685a4.5 4.5 0 011.13-1.897L16.863 4.487zm0 0L19.5 7.125" /></svg></button>
         <button class="delete-btn p-2 text-gray-500 hover:text-red-600" data-index="${trailer.originalIndex}" title="Supprimer"><svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 01-2.244 2.077H8.084a2.25 2.25 0 01-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 00-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 013.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 00-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 00-7.5 0" /></svg></button>
     ` : '';
@@ -278,7 +284,7 @@ function createTrailerCardHTML(trailer, canEdit) {
         </div>
         ${baleInfo ? `<div class="mt-2 pt-2 border-t border-gray-100">${baleInfo}</div>` : ''}
         <div class="flex items-center gap-2 mt-3 pt-3 border-t border-gray-100">
-            ${canEdit && !isFinalized ? `<button class="finalize-btn flex-1 bg-blue-500 text-white px-3 py-2 text-sm font-semibold rounded-lg" data-index="${trailer.originalIndex}">Finaliser</button>` : ''}
+            ${canManage && !isFinalized ? `<button class="finalize-btn flex-1 bg-blue-500 text-white px-3 py-2 text-sm font-semibold rounded-lg" data-index="${trailer.originalIndex}">Finaliser</button>` : ''}
             ${isFinalized ? `<span class="flex-1 text-center text-green-600 font-semibold text-sm">Terminé</span>` : ''}
             ${editControls}
         </div>
@@ -559,14 +565,13 @@ async function handleSaveNewField() {
     try {
         const fieldsCollectionRef = collection(db, 'users', currentUser.uid, 'fields');
         
-        // CORRECTION : On ajoute ownerId et un tableau accessControl vide
         await addDoc(fieldsCollectionRef, { 
             name, 
             crop, 
             size, 
             trailers: [], 
-            ownerId: currentUser.uid,    // Ajouté pour la cohérence
-            accessControl: []            // Ajouté : Champ indispensable pour les partages
+            ownerId: currentUser.uid,
+            accessControl: [] // Champ indispensable pour les partages futurs
         });
 
         showToast(`Parcelle "${name}" ajoutée !`);
@@ -748,13 +753,13 @@ async function handleAddNewTrailerName() {
 
 function setupEventListeners() {
     backToListBtn.addEventListener('click', () => {
-        // Le retour se fait vers la liste d'où l'on vient (la sienne ou celle des partages)
         navigateToPage(currentView === 'my-fields' ? 'list' : 'shared-list');
     });
 
     addFieldBtn.addEventListener('click', showAddFieldModal);
     addTrailerFab.addEventListener('click', () => { if (currentFieldKey) showWeightModal('full'); });
     
+    navFieldsBtn.addEventListener('click', () => navigateToPage('list'));
     navSummaryBtn.addEventListener('click', showGlobalResults);
     navExportBtn.addEventListener('click', exportToExcel);
 
