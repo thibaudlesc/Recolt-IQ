@@ -17,7 +17,7 @@ let unsubscribeSharedFields = null;
 export function initSharing(user) {
     currentUser = user;
     if (unsubscribeSharedFields) {
-        unsubscribeSharedFields(); // Stoppe l'ancien écouteur avant d'en créer un nouveau
+        unsubscribeSharedFields();
     }
     loadSharedFields();
 }
@@ -53,7 +53,6 @@ export async function generateShareLink(fieldId) {
  * @param {string} url - Le lien de partage à afficher.
  */
 function showShareLinkModal(url) {
-    // S'assure que la modale est gérée par une seule fonction pour éviter les conflits
     const modalContainer = document.getElementById('modal-container');
     const modalContent = document.getElementById('modal-content');
     const modalBackdrop = document.getElementById('modal-backdrop');
@@ -73,11 +72,9 @@ function showShareLinkModal(url) {
     const closeModal = () => modalContainer.classList.add('hidden');
     
     document.getElementById('close-share-modal-btn').addEventListener('click', closeModal);
-    // Correction pour pouvoir refermer la modale en cliquant en dehors
     if (modalBackdrop) {
         modalBackdrop.addEventListener('click', closeModal);
     }
-
 
     document.getElementById('copy-share-url-btn').addEventListener('click', () => {
         const input = document.getElementById('share-url-input');
@@ -97,56 +94,66 @@ function showShareLinkModal(url) {
  * @param {import("firebase/auth").User} user - L'utilisateur qui réclame le jeton.
  */
 export async function handleShareToken(token, user) {
-    if (!token || !user) return;
+    console.log("--- DÉBUT DU TRAITEMENT DU JETON DE PARTAGE ---");
+    if (!token || !user) {
+        console.log("Arrêt : Jeton ou utilisateur manquant.", { token, user });
+        return;
+    }
     
+    console.log(`1. Jeton reçu: ${token}`);
+    console.log(`2. Utilisateur actuel (qui accepte le partage): ${user.uid}`);
+
     const tokenDocRef = doc(db, "shareTokens", token);
     try {
+        console.log(`3. Lecture du document du jeton à l'adresse: /shareTokens/${token}`);
         const tokenDocSnap = await getDoc(tokenDocRef);
 
         if (!tokenDocSnap.exists()) {
+            console.error("ERREUR : Le document du jeton n'existe pas ou a déjà été utilisé.");
             showToast("Ce lien de partage est invalide ou a déjà été utilisé.");
             return;
         }
 
         const tokenData = tokenDocSnap.data();
+        console.log("4. Données du jeton récupérées:", tokenData);
 
         if (tokenData.ownerId === user.uid) {
+            console.warn("AVERTISSEMENT : L'utilisateur essaie de partager avec lui-même.");
             showToast("Vous ne pouvez pas partager une parcelle avec vous-même.");
             await deleteDoc(tokenDocRef);
             return;
         }
         
         const fieldDocRef = doc(db, "users", tokenData.ownerId, "fields", tokenData.fieldId);
-        const ownerDocRef = doc(db, "users", tokenData.ownerId);
+        console.log(`5. Préparation de la mise à jour de la parcelle à l'adresse: ${fieldDocRef.path}`);
+        console.log(`   -> Ajout de l'UID '${user.uid}' au tableau 'accessControl'.`);
 
-        const [fieldDocSnap, ownerDocSnap] = await Promise.all([getDoc(fieldDocRef), getDoc(ownerDocRef)]);
-        
-        if (!fieldDocSnap.exists() || !ownerDocSnap.exists()) {
-             showToast("La parcelle ou le propriétaire associé n'existe plus.");
-             await deleteDoc(tokenDocRef);
-             return;
-        }
-
-        const fieldName = fieldDocSnap.data().name;
-
+        // C'est ici que l'erreur se produit probablement.
         await updateDoc(fieldDocRef, {
             accessControl: arrayUnion(user.uid)
         });
 
+        console.log("6. SUCCÈS : La parcelle a été mise à jour.");
+
+        console.log("7. Suppression du jeton utilisé...");
         await deleteDoc(tokenDocRef);
+        console.log("8. Jeton supprimé.");
         
-        showToast(`Accès accordé à la parcelle "${fieldName}".`);
+        showToast(`Accès accordé à la parcelle.`);
         navigateToPage('shared-list');
 
     } catch (error) {
-        console.error("Erreur lors du traitement du jeton :", error);
+        // Affiche l'erreur complète pour un débogage détaillé.
+        console.error("ERREUR FINALE lors du traitement du jeton :", error);
         showToast("Une erreur est survenue lors de l'acceptation du partage.");
     } finally {
+        console.log("--- FIN DU TRAITEMENT DU JETON DE PARTAGE ---");
         const url = new URL(window.location);
         url.searchParams.delete('token');
         window.history.replaceState({}, document.title, url.toString());
     }
 }
+
 
 /**
  * Charge et affiche les parcelles partagées avec l'utilisateur actuel en temps réel.
@@ -186,50 +193,28 @@ function loadSharedFields() {
                     </div>
                 `;
                 card.addEventListener('click', () => navigateToPage('details', field.id, field.ownerId));
-                return card;
+                return card.outerHTML;
             } catch (error) {
                 console.error("Erreur de récupération du propriétaire pour la parcelle:", field.id, error);
                 return null;
             }
         });
         
-        const fieldCards = await Promise.all(fieldCardPromises);
-        fieldCards.forEach(card => {
-            if(card) sharedFieldListContainer.appendChild(card);
-        });
+        const fieldCardsHTML = (await Promise.all(fieldCardPromises)).filter(Boolean).join('');
+        sharedFieldListContainer.innerHTML = fieldCardsHTML;
 
     }, (error) => {
         console.error("Erreur de chargement des champs partagés:", error);
         let userMessage = "";
 
-        // [NOUVEAU] Détecte l'erreur spécifique d'un index manquant
         if (error.code === 'failed-precondition') {
-            userMessage = `
-                <p class="font-bold">Action requise : Index manquant !</p>
-                <p class="text-sm mt-2">
-                    La base de données a besoin d'un index pour effectuer cette recherche.
-                    Ouvrez la console de votre navigateur (F12), trouvez l'erreur Firestore et 
-                    <strong>cliquez sur le lien</strong> pour créer l'index automatiquement.
-                </p>
-            `;
+            userMessage = `<p class="font-bold">Action requise : Index manquant !</p><p class="text-sm mt-2">La base de données a besoin d'un index pour cette recherche. Ouvrez la console (F12), trouvez l'erreur et <strong>cliquez sur le lien</strong> pour le créer.</p>`;
         } else if (error.code === 'permission-denied') {
-             userMessage = `
-                <p class="font-bold">Erreur de Permissions</p>
-                <p class="text-sm mt-2">
-                    Vos règles de sécurité Firestore ne permettent pas cette opération. Assurez-vous d'avoir publié les dernières règles.
-                </p>
-            `;
+             userMessage = `<p class="font-bold">Erreur de Permissions</p><p class="text-sm mt-2">Vos règles de sécurité Firestore ne permettent pas cette opération. Assurez-vous d'avoir publié les dernières règles.</p>`;
         } else {
-             userMessage = `
-                <p class="font-bold">La récupération des partages a échoué.</p>
-                <p class="text-sm mt-2">Vérifiez votre connexion et réessayez.</p>
-            `;
+             userMessage = `<p class="font-bold">La récupération des partages a échoué.</p><p class="text-sm mt-2">Vérifiez votre connexion et réessayez.</p>`;
         }
 
-        const errorMessageHTML = `
-            <div class="text-center text-red-600 mt-8 p-4 bg-red-100 rounded-lg border border-red-200">
-                ${userMessage}
-            </div>`;
-        sharedFieldListContainer.innerHTML = errorMessageHTML;
+        sharedFieldListContainer.innerHTML = `<div class="text-center text-red-600 mt-8 p-4 bg-red-100 rounded-lg border border-red-200">${userMessage}</div>`;
     });
 }
