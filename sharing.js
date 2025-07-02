@@ -21,7 +21,7 @@ export function initSharing(user) {
         unsubscribeSharedFields();
     }
 
-    // [CORRECTION] On ajoute un écouteur d'événement délégué une seule fois.
+    // On ajoute un écouteur d'événement délégué une seule fois.
     // Cet écouteur gérera les clics sur toutes les cartes de parcelles partagées.
     if (!isSharingInitialized) {
         sharedFieldListContainer.addEventListener('click', (e) => {
@@ -37,48 +37,38 @@ export function initSharing(user) {
 }
 
 /**
- * Génère un lien de partage unique pour une parcelle.
+ * [MODIFIÉ] Lance le processus de partage en affichant les options de durée.
  * @param {string} fieldId - L'ID de la parcelle à partager.
  */
 export async function generateShareLink(fieldId) {
     if (!currentUser) return;
-
-    try {
-        const token = `token_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-        const tokenDocRef = doc(db, "shareTokens", token);
-
-        await setDoc(tokenDocRef, {
-            ownerId: currentUser.uid,
-            fieldId: fieldId,
-            createdAt: new Date()
-        });
-
-        const shareUrl = `${window.location.origin}${window.location.pathname}?token=${token}`;
-        showShareLinkModal(shareUrl);
-
-    } catch (error) {
-        console.error("Erreur lors de la création du lien de partage:", error);
-        showToast("Impossible de générer le lien de partage.");
-    }
+    showShareOptionsModal(fieldId);
 }
 
 /**
- * Affiche une modale avec le lien de partage.
- * @param {string} url - Le lien de partage à afficher.
+ * [NOUVEAU] Affiche une modale pour choisir la durée de validité du lien de partage.
+ * @param {string} fieldId - L'ID de la parcelle pour laquelle générer un lien.
  */
-function showShareLinkModal(url) {
+function showShareOptionsModal(fieldId) {
     const modalContainer = document.getElementById('modal-container');
     const modalContent = document.getElementById('modal-content');
     const modalBackdrop = document.getElementById('modal-backdrop');
 
     modalContent.innerHTML = `
         <h3 class="text-xl font-semibold mb-4 text-center">Partager la parcelle</h3>
-        <p class="text-gray-600 text-center mb-4">Envoyez ce lien à la personne avec qui vous souhaitez partager. Le lien est à usage unique.</p>
-        <div class="bg-gray-100 p-3 rounded-lg flex items-center justify-between">
-            <input id="share-url-input" type="text" readonly value="${url}" class="bg-transparent border-none text-gray-700 text-sm flex-grow">
-            <button id="copy-share-url-btn" class="ml-2 px-4 py-2 bg-blue-500 text-white text-sm font-semibold rounded-lg hover:bg-blue-600">Copier</button>
+        <div class="mb-6">
+            <label for="share-duration-select" class="block text-sm font-medium text-gray-700 mb-2">Durée de validité du lien :</label>
+            <select id="share-duration-select" class="w-full p-3 bg-gray-50 border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 transition">
+                <option value="24">24 Heures</option>
+                <option value="168">7 Jours</option>
+                <option value="720">30 Jours</option>
+                <option value="never">À vie (jusqu'à la première utilisation)</option>
+            </select>
         </div>
-        <button id="close-share-modal-btn" class="mt-6 w-full px-6 py-3 bg-gray-200 text-gray-800 rounded-lg">Fermer</button>
+        <div class="grid grid-cols-2 gap-3">
+            <button id="close-share-modal-btn" class="w-full px-6 py-3 bg-gray-200 text-gray-800 rounded-lg hover:bg-gray-300">Annuler</button>
+            <button id="generate-share-link-btn" class="w-full px-6 py-3 bg-blue-600 text-white font-bold rounded-lg hover:bg-blue-700">Générer le lien</button>
+        </div>
     `;
     
     modalContainer.classList.remove('hidden');
@@ -86,10 +76,62 @@ function showShareLinkModal(url) {
     const closeModal = () => modalContainer.classList.add('hidden');
     
     document.getElementById('close-share-modal-btn').addEventListener('click', closeModal);
-    if (modalBackdrop) {
-        modalBackdrop.addEventListener('click', closeModal);
-    }
+    if (modalBackdrop) modalBackdrop.addEventListener('click', closeModal);
 
+    document.getElementById('generate-share-link-btn').addEventListener('click', async () => {
+        const generateBtn = document.getElementById('generate-share-link-btn');
+        generateBtn.disabled = true;
+        generateBtn.textContent = 'Génération...';
+
+        const durationHours = document.getElementById('share-duration-select').value;
+        
+        let expiresAt = null;
+        if (durationHours !== 'never') {
+            expiresAt = new Date();
+            expiresAt.setHours(expiresAt.getHours() + parseInt(durationHours, 10));
+        }
+
+        try {
+            const token = `token_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+            const tokenDocRef = doc(db, "shareTokens", token);
+
+            await setDoc(tokenDocRef, {
+                ownerId: currentUser.uid,
+                fieldId: fieldId,
+                createdAt: new Date(),
+                expiresAt: expiresAt
+            });
+
+            const shareUrl = `${window.location.origin}${window.location.pathname}?token=${token}`;
+            showGeneratedLinkModal(shareUrl);
+
+        } catch (error) {
+            console.error("Erreur lors de la création du lien de partage:", error);
+            showToast("Impossible de générer le lien.");
+            closeModal();
+        }
+    });
+}
+
+/**
+ * [NOUVEAU] Met à jour la modale pour afficher le lien de partage qui a été généré.
+ * @param {string} url - Le lien de partage à afficher.
+ */
+function showGeneratedLinkModal(url) {
+    const modalContent = document.getElementById('modal-content');
+    modalContent.innerHTML = `
+        <h3 class="text-xl font-semibold mb-4 text-center">Lien de partage généré</h3>
+        <p class="text-gray-600 text-center mb-4">Envoyez ce lien à la personne avec qui vous souhaitez partager. Il est à usage unique.</p>
+        <div class="bg-gray-100 p-3 rounded-lg flex items-center justify-between">
+            <input id="share-url-input" type="text" readonly value="${url}" class="bg-transparent border-none text-gray-700 text-sm flex-grow">
+            <button id="copy-share-url-btn" class="ml-2 px-4 py-2 bg-green-600 text-white text-sm font-semibold rounded-lg hover:bg-green-700">Copier</button>
+        </div>
+        <button id="close-share-modal-btn" class="mt-6 w-full px-6 py-3 bg-gray-200 text-gray-800 rounded-lg">Fermer</button>
+    `;
+
+    const closeModal = () => document.getElementById('modal-container').classList.add('hidden');
+    document.getElementById('close-share-modal-btn').addEventListener('click', closeModal);
+    
     document.getElementById('copy-share-url-btn').addEventListener('click', () => {
         const input = document.getElementById('share-url-input');
         input.select();
@@ -130,6 +172,14 @@ export async function handleShareToken(token, user) {
 
         const tokenData = tokenDocSnap.data();
         console.log("4. Données du jeton récupérées:", tokenData);
+
+        // [NOUVEAU] Vérification de la date d'expiration du jeton.
+        if (tokenData.expiresAt && tokenData.expiresAt.toDate() < new Date()) {
+            console.error("ERREUR : Le jeton de partage a expiré.");
+            showToast("Ce lien de partage a expiré.");
+            await deleteDoc(tokenDocRef); // On nettoie le jeton expiré.
+            return;
+        }
 
         if (tokenData.ownerId === user.uid) {
             console.warn("AVERTISSEMENT : L'utilisateur essaie de partager avec lui-même.");
@@ -187,7 +237,7 @@ function loadSharedFields() {
                 const ownerDoc = await getDoc(doc(db, "users", field.ownerId));
                 const ownerName = ownerDoc.exists() ? ownerDoc.data().name : "Propriétaire Inconnu";
                 
-                // [CORRECTION] On génère juste le HTML. L'écouteur de clic est maintenant sur le conteneur parent.
+                // On génère juste le HTML. L'écouteur de clic est maintenant sur le conteneur parent.
                 return `
                     <div class="bg-white p-4 rounded-xl shadow-sm border border-gray-200">
                         <div class="field-card-content cursor-pointer" data-key="${field.id}" data-owner-id="${field.ownerId}">
