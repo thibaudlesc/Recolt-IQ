@@ -37,6 +37,7 @@ let unsubscribeFields;
 let unsubscribeTrailerNames;
 let onConfirmAction = null;
 let currentView = 'my-fields'; // 'my-fields' ou 'shared-fields'
+let areNavListenersInitialized = false; // Pour s'assurer que les écouteurs ne sont ajoutés qu'une fois
 
 // --- INITIALISATION ---
 export function initHarvestApp(user, profile) {
@@ -95,7 +96,7 @@ export function navigateToPage(page, key = null, ownerId = null) {
         currentFieldKey = key;
         currentFieldOwnerId = ownerId || currentUser.uid;
         // Maintient l'onglet de navigation actif correct lors de la consultation des détails
-        updateActiveNav(currentView);
+        updateActiveNav(currentView === 'my-fields' ? 'fields' : 'shared-fields');
         displayFieldDetails(key, currentFieldOwnerId);
     }
 }
@@ -187,7 +188,7 @@ async function displayFieldDetails(fieldKey, ownerId) {
         detailsHeaderTitle.textContent = field.name;
         const { totalWeight, yield: yieldValue, totalBaleCount } = calculateTotals(field);
 
-        // La permission d'édition est donnée si on est propriétaire ou si on a les droits d'écriture (logique simplifiée ici)
+        // La permission d'édition est donnée si on est propriétaire ou si on a les droits d'écriture
         const canEdit = ownerId === currentUser.uid || (field.accessControl && field.accessControl.includes(currentUser.uid));
         addTrailerFab.classList.toggle('hidden', !canEdit);
 
@@ -747,14 +748,20 @@ async function handleAddNewTrailerName() {
 }
 
 function setupEventListeners() {
+    // [MODIFIÉ] On s'assure que les écouteurs ne sont ajoutés qu'une seule fois
+    if (areNavListenersInitialized) return;
+
     backToListBtn.addEventListener('click', () => {
-        // Le retour se fait vers la liste d'où l'on vient (la sienne ou celle des partages)
-        navigateToPage(currentView === 'my-fields' ? 'list' : 'shared-list');
+        const viewToReturn = currentView === 'my-fields' ? 'list' : 'shared-list';
+        navigateToPage(viewToReturn);
     });
 
     addFieldBtn.addEventListener('click', showAddFieldModal);
     addTrailerFab.addEventListener('click', () => { if (currentFieldKey) showWeightModal('full'); });
     
+    // [CORRECTION] Ajout des écouteurs pour la navigation principale de l'application
+    navFieldsBtn.addEventListener('click', () => navigateToPage('list'));
+    navSharedFieldsBtn.addEventListener('click', () => navigateToPage('shared-list'));
     navSummaryBtn.addEventListener('click', showGlobalResults);
     navExportBtn.addEventListener('click', exportToExcel);
 
@@ -783,6 +790,8 @@ function setupEventListeners() {
     modalContainer.addEventListener('click', (e) => {
         if (e.target.id === 'modal-backdrop') closeModal();
     });
+
+    areNavListenersInitialized = true; // On marque les écouteurs comme initialisés
 }
 
 // --- FONCTIONS UTILITAIRES ---
