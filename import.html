@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Importation des données de parcelles</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body { font-family: sans-serif; }
+    </style>
+</head>
+<body class="bg-gray-100 flex items-center justify-center min-h-screen">
+
+    <div class="bg-white p-8 rounded-lg shadow-lg text-center max-w-lg w-full">
+        <h1 class="text-2xl font-bold mb-4">Importation des parcelles initiales</h1>
+        <p class="text-gray-600 mb-6">
+            Ce script ajoutera la liste prédéfinie de parcelles à votre base de données Firestore.
+            Cliquez sur le bouton pour démarrer. <strong>N'exécutez ce script qu'une seule fois.</strong>
+        </p>
+        <button id="import-btn" class="bg-blue-600 text-white font-bold py-3 px-6 rounded-lg hover:bg-blue-700 transition-colors duration-300">
+            Importer les parcelles
+        </button>
+        <div id="status" class="mt-6 text-lg font-medium"></div>
+    </div>
+
+    <!-- Firebase SDK -->
+    <script type="module">
+        // Importer les fonctions nécessaires des SDKs
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getFirestore, writeBatch, doc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        // AJOUT : Importer les fonctions d'authentification
+        import { getAuth, signInAnonymously } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+
+        // IMPORTANT: Assurez-vous que cette configuration est la vôtre
+        const firebaseConfig = {
+            apiKey: "AIzaSyB7PBlp6EGZGzPQ4wav2AMQZ_in0WWZnyo",
+            authDomain: "recolt-iq.firebaseapp.com",
+            projectId: "recolt-iq",
+            storageBucket: "recolt-iq.appspot.com", // Correction: .appspot.com est plus courant
+            messagingSenderId: "1069534683318",
+            appId: "1:1069534683318:web:633bad25dd9889cdb98617",
+            measurementId: "G-V8RXV292T7"
+        };
+
+        // Initialiser Firebase
+        const app = initializeApp(firebaseConfig);
+        const db = getFirestore(app);
+        // AJOUT : Initialiser l'authentification
+        const auth = getAuth(app);
+
+        // --- Données à importer (copiées depuis votre Canvas) ---
+        const harvestDataToImport = {
+            // --- Céréales ---
+            "La Grande Pièce": { size: 22.50, crop: "Blé tendre", trailers: [] },
+            "Le Champ du Moulin": { size: 18.75, crop: "Blé tendre", trailers: [] },
+            "Le Chemin Blanc": { size: 28.10, crop: "Blé tendre", trailers: [] },
+            "Les Vingt Hectares": { size: 20.20, crop: "Blé tendre", trailers: [] },
+            "La Pièce du Milieu": { size: 16.80, crop: "Blé tendre", trailers: [] },
+            "Les Quarante Journaux": { size: 20.00, crop: "Orge d'hiver", trailers: [] },
+            "La Plaine": { size: 35.10, crop: "Orge d'hiver", trailers: [] },
+            "La Butte": { size: 11.90, crop: "Orge d'hiver", trailers: [] },
+            "Les Terres Fortes": { size: 24.00, crop: "Orge d'hiver", trailers: [] },
+            "Le Petit Clos": { size: 7.80, crop: "Orge de printemps", trailers: [] },
+            "Le Champ Rond": { size: 10.50, crop: "Orge de printemps", trailers: [] },
+            "La Longue Raie": { size: 15.20, crop: "Maïs grain", trailers: [] },
+            "Le Plateau": { size: 25.00, crop: "Maïs grain", trailers: [] },
+            "Le Bord de l'Eau": { size: 19.30, crop: "Maïs grain", trailers: [] },
+            "La Pièce Carrée": { size: 14.14, crop: "Maïs grain", trailers: [] },
+            // --- Oléagineux ---
+            "Les Hautes Bornes": { size: 19.80, crop: "Colza", trailers: [] },
+            "La Croix de Pierre": { size: 12.30, crop: "Colza", trailers: [] },
+            "Le Grand Pré": { size: 29.50, crop: "Colza", trailers: [] },
+            "La Côte": { size: 8.10, crop: "Colza", trailers: [] },
+            "Le Champ Jaune": { size: 18.00, crop: "Colza", trailers: [] },
+            "Le Tournant": { size: 8.90, crop: "Tournesol", trailers: [] },
+            // --- Lin ---
+            "Bruyere": { size: 16.40, crop: "Lin hiver", trailers: [] },
+            "Telegraphe": { size: 14.20, crop: "Lin hiver", trailers: [] },
+            "La Fosse": { size: 11.20, crop: "Lin hiver", trailers: [] },
+            "Grandguillot bis": { size: 9.00, crop: "Lin printemps", trailers: [] },
+            "Les Trois Coins": { size: 7.50, crop: "Lin printemps", trailers: [] },
+        };
+
+        const importBtn = document.getElementById('import-btn');
+        const statusDiv = document.getElementById('status');
+
+        async function importData() {
+            importBtn.disabled = true;
+            statusDiv.textContent = "Tentative de connexion anonyme...";
+            statusDiv.className = "mt-6 text-lg font-medium text-blue-600";
+
+            try {
+                // ÉTAPE 1: Se connecter anonymement AVANT d'essayer d'écrire
+                const userCredential = await signInAnonymously(auth);
+                console.log("Connecté en tant qu'utilisateur anonyme:", userCredential.user.uid);
+
+                statusDiv.textContent = "Connexion réussie. Début de l'importation...";
+
+                // Utiliser un "batch" pour écrire toutes les données en une seule opération
+                const batch = writeBatch(db);
+                
+                // ÉTAPE 2: Parcourir et écrire les données (comme avant)
+                for (const fieldName in harvestDataToImport) {
+                    const fieldRef = doc(db, 'fields', fieldName);
+                    const data = harvestDataToImport[fieldName];
+                    
+                    batch.set(fieldRef, {
+                        name: fieldName,
+                        size: data.size,
+                        crop: data.crop,
+                        trailers: data.trailers || []
+                    });
+                }
+
+                // Envoyer toutes les opérations d'écriture à Firestore
+                await batch.commit();
+
+                statusDiv.textContent = "✅ Succès ! Toutes les parcelles ont été importées.";
+                statusDiv.className = "mt-6 text-lg font-medium text-green-600";
+                importBtn.textContent = "Importation terminée";
+
+            } catch (error) {
+                console.error("Erreur pendant l'importation : ", error);
+                statusDiv.textContent = `❌ Erreur lors de l'importation. ${error.message}. Vérifiez la console.`;
+                statusDiv.className = "mt-6 text-lg font-medium text-red-600";
+                importBtn.disabled = false;
+            }
+        }
+
+        importBtn.addEventListener('click', importData);
+    </script>
+</body>
+</html>

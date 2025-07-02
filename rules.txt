@@ -1,0 +1,64 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // --- Fonctions d'aide pour la clarté ---
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+    function isOwner(userId) {
+      return request.auth.uid == userId;
+    }
+    
+    // --- [MODIFICATION CRITIQUE] ---
+    // Utilise la fonction `hasAny` qui est plus robuste pour les requêtes sur les tableaux.
+    // Cela vérifie si le tableau 'accessControl' du document contient l'ID de l'utilisateur.
+    function isSharedWith() {
+      return resource.data.accessControl.hasAny([request.auth.uid]);
+    }
+    
+    function accessControlIsUnchanged() {
+      return request.resource.data.accessControl == resource.data.accessControl;
+    }
+
+    // --- Règle pour les profils utilisateurs ---
+    match /users/{userId} {
+      allow read: if isAuthenticated();
+      allow write: if isOwner(userId);
+    }
+
+    // --- Règle unique et complète pour les parcelles (fields) ---
+    match /users/{ownerId}/fields/{fieldId} {
+      
+      // PERMISSION DE LECTURE (GET & LIST/QUERY)
+      // Un utilisateur peut lire une parcelle s'il est authentifié ET
+      // s'il en est le propriétaire OU si elle a été partagée avec lui.
+      allow read: if isAuthenticated() && (isOwner(ownerId) || isSharedWith());
+
+      // PERMISSION DE CRÉATION
+      // Seul le propriétaire peut créer une parcelle.
+      allow create: if isOwner(ownerId);
+      
+      // PERMISSION DE MISE À JOUR
+      // Le propriétaire peut tout mettre à jour, OU un invité peut mettre à jour
+      // à condition qu'il ne modifie pas la liste des accès.
+      allow update: if isAuthenticated() && 
+                      (isOwner(ownerId) || (isSharedWith() && accessControlIsUnchanged()));
+
+      // PERMISSION DE SUPPRESSION
+      // Seul le propriétaire peut supprimer une parcelle.
+      allow delete: if isOwner(ownerId);
+    }
+
+    // --- Règle pour les noms de bennes ---
+    match /users/{userId}/trailerNames/{trailerId} {
+      allow read, write, delete: if isOwner(userId);
+    }
+
+    // --- Règle pour les jetons de partage ---
+    match /shareTokens/{tokenId} {
+      allow read, delete: if isAuthenticated();
+      allow create: if isOwner(request.resource.data.ownerId);
+    }
+  }
+}

@@ -73,7 +73,11 @@ function showShareLinkModal(url) {
     const closeModal = () => modalContainer.classList.add('hidden');
     
     document.getElementById('close-share-modal-btn').addEventListener('click', closeModal);
-    modalBackdrop.addEventListener('click', closeModal);
+    // Correction pour pouvoir refermer la modale en cliquant en dehors
+    if (modalBackdrop) {
+        modalBackdrop.addEventListener('click', closeModal);
+    }
+
 
     document.getElementById('copy-share-url-btn').addEventListener('click', () => {
         const input = document.getElementById('share-url-input');
@@ -132,7 +136,6 @@ export async function handleShareToken(token, user) {
         await deleteDoc(tokenDocRef);
         
         showToast(`Accès accordé à la parcelle "${fieldName}".`);
-        // Force la navigation vers la page des partages, ce qui déclenchera un affichage propre.
         navigateToPage('shared-list');
 
     } catch (error) {
@@ -154,7 +157,7 @@ function loadSharedFields() {
     const q = query(collectionGroup(db, 'fields'), where('accessControl', 'array-contains', currentUser.uid));
 
     unsubscribeSharedFields = onSnapshot(q, async (snapshot) => {
-        sharedFieldListContainer.innerHTML = ''; // Vide la liste à chaque mise à jour pour éviter les doublons
+        sharedFieldListContainer.innerHTML = ''; 
 
         if (snapshot.empty) {
             sharedFieldListContainer.innerHTML = `<p class="text-center text-gray-500 mt-8">Aucune parcelle n'a été partagée avec vous.</p>`;
@@ -182,6 +185,7 @@ function loadSharedFields() {
                         </div>
                     </div>
                 `;
+                card.addEventListener('click', () => navigateToPage('details', field.id, field.ownerId));
                 return card;
             } catch (error) {
                 console.error("Erreur de récupération du propriétaire pour la parcelle:", field.id, error);
@@ -196,10 +200,35 @@ function loadSharedFields() {
 
     }, (error) => {
         console.error("Erreur de chargement des champs partagés:", error);
+        let userMessage = "";
+
+        // [NOUVEAU] Détecte l'erreur spécifique d'un index manquant
+        if (error.code === 'failed-precondition') {
+            userMessage = `
+                <p class="font-bold">Action requise : Index manquant !</p>
+                <p class="text-sm mt-2">
+                    La base de données a besoin d'un index pour effectuer cette recherche.
+                    Ouvrez la console de votre navigateur (F12), trouvez l'erreur Firestore et 
+                    <strong>cliquez sur le lien</strong> pour créer l'index automatiquement.
+                </p>
+            `;
+        } else if (error.code === 'permission-denied') {
+             userMessage = `
+                <p class="font-bold">Erreur de Permissions</p>
+                <p class="text-sm mt-2">
+                    Vos règles de sécurité Firestore ne permettent pas cette opération. Assurez-vous d'avoir publié les dernières règles.
+                </p>
+            `;
+        } else {
+             userMessage = `
+                <p class="font-bold">La récupération des partages a échoué.</p>
+                <p class="text-sm mt-2">Vérifiez votre connexion et réessayez.</p>
+            `;
+        }
+
         const errorMessageHTML = `
             <div class="text-center text-red-600 mt-8 p-4 bg-red-100 rounded-lg border border-red-200">
-                <p class="font-bold">La récupération des partages a échoué.</p>
-                <p class="text-sm mt-2">Vérifiez vos règles de sécurité Firestore et que l'index composite est bien créé et activé.</p>
+                ${userMessage}
             </div>`;
         sharedFieldListContainer.innerHTML = errorMessageHTML;
     });
