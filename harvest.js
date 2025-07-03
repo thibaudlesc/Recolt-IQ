@@ -529,7 +529,6 @@ function showWeightModal(mode, index = -1) {
                     <input type="number" inputmode="numeric" id="bale-count-input" class="w-full p-4 border-2 border-slate-300 rounded-lg text-xl text-center" placeholder="0">
                 </div>` : '';
 
-            // MODIFIÉ: Remplacement de l'icône
             content = `
                 <h3 class="text-xl font-semibold mb-6 text-center">Nouvelle benne pleine</h3>
                 <div class="space-y-4">
