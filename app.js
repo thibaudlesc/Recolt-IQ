@@ -120,16 +120,16 @@ const navLandingLinks = document.querySelectorAll('.nav-landing-link');
 navLandingLinks.forEach(anchor => {
     safeAddEventListener(anchor, 'click', function (e) {
         e.preventDefault();
-        showView('landing-page');
-        const href = this.getAttribute('href'); // FIX: Capture href to use in setTimeout
-        setTimeout(() => {
-            const targetElement = document.querySelector(href);
-            if(targetElement) {
-                targetElement.scrollIntoView({
-                    behavior: 'smooth'
-                });
-            }
-        }, 100); // Small delay to ensure the page is visible before scrolling
+        const href = this.getAttribute('href');
+        const targetElement = document.querySelector(href);
+        if (targetElement) {
+             showView('landing-page');
+             setTimeout(() => {
+                targetElement.scrollIntoView({ behavior: 'smooth' });
+            }, 100);
+        } else {
+             showView('landing-page');
+        }
         if (mobileMenu) mobileMenu.classList.add('hidden');
     });
 });
@@ -204,13 +204,26 @@ safeAddEventListener(signupForm, 'submit', async (e) => {
             email: email,
             plan: 'demo'
         });
-        // FIX: Removed form reset to prevent race condition
     } catch (error) {
-        console.error("Signup Error:", error); // Added for better debugging
+        // CORRIGÉ: Ajout de messages d'erreur spécifiques pour l'inscription
         if(signupError) {
-            signupError.textContent = "L'adresse e-mail est peut-être déjà utilisée ou invalide.";
+            switch (error.code) {
+                case 'auth/weak-password':
+                    signupError.textContent = "Le mot de passe doit contenir au moins 6 caractères.";
+                    break;
+                case 'auth/email-already-in-use':
+                    signupError.textContent = "Cette adresse e-mail est déjà utilisée.";
+                    break;
+                case 'auth/invalid-email':
+                    signupError.textContent = "L'adresse e-mail n'est pas valide.";
+                    break;
+                default:
+                    signupError.textContent = "Une erreur est survenue lors de l'inscription.";
+                    break;
+            }
             signupError.classList.remove('hidden');
         }
+        console.error("Signup Error:", error);
     }
 });
 
@@ -221,9 +234,8 @@ safeAddEventListener(loginForm, 'submit', async (e) => {
     if(loginError) loginError.classList.add('hidden');
     try {
         await signInWithEmailAndPassword(auth, email, password);
-        // FIX: Removed form reset to prevent race condition
     } catch (error) {
-        console.error("Login Error:", error); // Added for better debugging
+        console.error("Login Error:", error);
         if(loginError){
             loginError.textContent = "Email ou mot de passe incorrect.";
             loginError.classList.remove('hidden');
@@ -261,7 +273,6 @@ onAuthStateChanged(auth, async (user) => {
         showView('app-page');
         updateActiveNav('fields');
         
-        // Manage mobile menu visibility
         if (mobileNavLinkApp) mobileNavLinkApp.classList.remove('hidden');
         if (mobileLogoutBtn) mobileLogoutBtn.classList.remove('hidden');
         if (navLinkLogin) navLinkLogin.classList.add('hidden');
@@ -280,7 +291,6 @@ onAuthStateChanged(auth, async (user) => {
             showView('landing-page');
         }
         
-        // Manage mobile menu visibility
         if (mobileNavLinkApp) mobileNavLinkApp.classList.add('hidden');
         if (mobileLogoutBtn) mobileLogoutBtn.classList.add('hidden');
         if (navLinkLogin) navLinkLogin.classList.remove('hidden');
