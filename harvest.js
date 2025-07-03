@@ -6,9 +6,10 @@ import { generateShareLink, showMultiShareOptionsModal } from './sharing.js';
 // --- DOM Element Selection ---
 const pageFieldList = document.getElementById('page-field-list');
 const pageSharedFieldList = document.getElementById('page-shared-field-list');
+const pageMyShares = document.getElementById('page-my-shares'); // NOUVEAU
 const pageFieldDetails = document.getElementById('page-field-details');
 const cropFiltersContainer = document.getElementById('crop-filters-container');
-const openFilterModalBtn = document.getElementById('open-filter-modal-btn'); // For mobile filters
+const openFilterModalBtn = document.getElementById('open-filter-modal-btn'); 
 const fieldListContainer = document.getElementById('field-list-container');
 const detailsHeaderTitle = document.getElementById('details-header-title');
 const backToListBtn = document.getElementById('back-to-list-btn');
@@ -17,7 +18,7 @@ const trailersListContainer = document.getElementById('trailers-list');
 const addTrailerFab = document.getElementById('add-trailer-fab');
 const navFieldsBtn = document.getElementById('nav-fields');
 const navSharedFieldsBtn = document.getElementById('nav-shared-fields');
-const navStatsBtn = document.getElementById('nav-stats');
+const navMySharesBtn = document.getElementById('nav-my-shares'); // NOUVEAU
 const navExportBtn = document.getElementById('nav-export');
 const modalContainer = document.getElementById('modal-container');
 const modalContent = document.getElementById('modal-content');
@@ -75,9 +76,11 @@ export function initHarvestApp(user, profile) {
     setupEventListeners();
 }
 
+// MODIFIÉ: Ajout de la gestion de la nouvelle page 'my-shares'
 export function navigateToPage(page, key = null, ownerId = null) {
     pageFieldList.classList.toggle('hidden', page !== 'list');
     pageSharedFieldList.classList.toggle('hidden', page !== 'shared-list');
+    pageMyShares.classList.toggle('hidden', page !== 'my-shares');
     pageFieldDetails.classList.toggle('hidden', page !== 'details');
     
     if (page === 'list') {
@@ -88,6 +91,9 @@ export function navigateToPage(page, key = null, ownerId = null) {
     } else if (page === 'shared-list') {
         currentView = 'shared-fields';
         updateActiveNav('shared-fields');
+    } else if (page === 'my-shares') {
+        currentView = 'my-shares';
+        updateActiveNav('my-shares');
     } else if (page === 'details' && key) {
         currentFieldKey = key;
         currentFieldOwnerId = ownerId || currentUser.uid;
@@ -96,13 +102,21 @@ export function navigateToPage(page, key = null, ownerId = null) {
     }
 }
 
+// MODIFIÉ: Ajout de la gestion du bouton actif pour 'my-shares'
 export function updateActiveNav(activeView) {
     document.querySelectorAll('.nav-btn').forEach(btn => {
         btn.classList.remove('active', 'text-green-600');
         btn.classList.add('text-slate-500');
     });
 
-    const buttonToActivate = document.getElementById(`nav-${activeView}`);
+    const buttonIdMap = {
+        'fields': 'nav-fields',
+        'shared-fields': 'nav-shared-fields',
+        'my-shares': 'nav-my-shares',
+        'export': 'nav-export'
+    };
+
+    const buttonToActivate = document.getElementById(buttonIdMap[activeView]);
     if (buttonToActivate) {
         buttonToActivate.classList.add('active', 'text-green-600');
         buttonToActivate.classList.remove('text-slate-500');
@@ -408,7 +422,6 @@ function showAddFieldModal() {
             <p class="text-center text-slate-600 mb-6">Passez à la version Pro pour ajouter des parcelles en illimité.</p>
             <div class="bg-green-50 border border-green-200 p-6 rounded-lg text-center">
                  <p class="font-semibold text-green-800 text-xl">Version PRO</p>
-                 <!-- MODIFIÉ: Prix mis à jour -->
                  <p class="text-5xl font-extrabold text-green-600 my-4">4.99€ <span class="text-xl font-normal">/ mois</span></p>
                  <button id="modal-upgrade-btn" class="mt-6 w-full bg-green-600 text-white font-bold py-3 rounded-lg hover:bg-green-700 transition">Mettre à niveau</button>
             </div>
@@ -885,6 +898,7 @@ function handleShareFilteredFields() {
     showMultiShareOptionsModal(fieldIds, selectedCrops);
 }
 
+// MODIFIÉ: Ajout du listener pour le nouvel onglet 'nav-my-shares'
 function setupEventListeners() {
     if (areNavListenersInitialized) return;
 
@@ -901,6 +915,7 @@ function setupEventListeners() {
     
     navFieldsBtn.addEventListener('click', () => navigateToPage('list'));
     navSharedFieldsBtn.addEventListener('click', () => navigateToPage('shared-list'));
+    navMySharesBtn.addEventListener('click', () => navigateToPage('my-shares'));
     navExportBtn.addEventListener('click', exportToExcel);
 
     if (openFilterModalBtn) {

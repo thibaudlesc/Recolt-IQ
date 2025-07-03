@@ -5,8 +5,8 @@ import { showToast, navigateToPage, showConfirmationModal, createFilterButton } 
 
 // --- SÉLECTION DES ÉLÉMENTS DU DOM ---
 const sharedFieldListContainer = document.getElementById('shared-field-list-container');
+const mySharesListContainer = document.getElementById('my-shares-list-container');
 const sharedCropFiltersContainer = document.getElementById('shared-crop-filters-container');
-// NOUVEAU: Ajout des sélecteurs pour le modal et le bouton de filtre mobile
 const openSharedFilterModalBtn = document.getElementById('open-shared-filter-modal-btn');
 const modalContainer = document.getElementById('modal-container');
 const modalContent = document.getElementById('modal-content');
@@ -15,18 +15,20 @@ const modalContent = document.getElementById('modal-content');
 // --- ÉTAT GLOBAL ---
 let currentUser = null;
 let unsubscribeSharedFields = null;
+let unsubscribeMyShares = null;
 let isSharingInitialized = false;
 let allSharedFields = [];
+let myFieldsWithShares = [];
 let selectedSharedCrops = [];
 
 
 export function initSharing(user) {
     currentUser = user;
-    if (unsubscribeSharedFields) {
-        unsubscribeSharedFields();
-    }
+    if (unsubscribeSharedFields) unsubscribeSharedFields();
+    if (unsubscribeMyShares) unsubscribeMyShares();
 
     if (!isSharingInitialized) {
+        // Listener pour la liste des partages qu'on m'a faits
         sharedFieldListContainer.addEventListener('click', (e) => {
             const cardContent = e.target.closest('.field-card-content');
             const revokeBtn = e.target.closest('.revoke-access-btn');
@@ -39,18 +41,31 @@ export function initSharing(user) {
                 navigateToPage('details', cardContent.dataset.key, cardContent.dataset.ownerId);
             }
         });
+
+        // MODIFIÉ: Listener pour la nouvelle vue de gestion des partages
+        mySharesListContainer.addEventListener('click', (e) => {
+            const header = e.target.closest('.share-user-card-header');
+            const revokeBtn = e.target.closest('.revoke-all-access-btn');
+
+            if (revokeBtn) {
+                e.stopPropagation(); // Empêche l'ouverture/fermeture de l'accordéon
+                const { userId, userName } = revokeBtn.dataset;
+                handleRevokeAllAccessForUser(userId, userName);
+            } else if (header) {
+                const content = header.nextElementSibling;
+                content.classList.toggle('hidden');
+                const icon = header.querySelector('svg');
+                icon.classList.toggle('rotate-180');
+            }
+        });
         
-        // NOUVEAU: Ajout du listener pour le bouton de filtre mobile
         if (openSharedFilterModalBtn) {
             openSharedFilterModalBtn.addEventListener('click', showSharedFilterModal);
         }
 
-        // NOUVEAU: Listener pour fermer le modal en cliquant sur le fond
         if (modalContainer) {
             modalContainer.addEventListener('click', (e) => {
-                if (e.target.id === 'modal-backdrop') {
-                    closeModal();
-                }
+                if (e.target.id === 'modal-backdrop') closeModal();
             });
         }
 
@@ -58,6 +73,7 @@ export function initSharing(user) {
     }
 
     loadSharedFields();
+    loadMySharedFields();
 }
 
 export async function generateShareLink(fieldId) {
@@ -72,15 +88,9 @@ function showShareOptionsModal(fieldId) {
 
     modalContent.innerHTML = `
         <h3 class="text-xl font-semibold mb-4 text-center">Partager la parcelle</h3>
-        <div class="mb-6">
-            <label for="share-duration-select" class="block text-sm font-medium text-gray-700 mb-2">Durée de validité du lien :</label>
-            <select id="share-duration-select" class="w-full p-3 bg-gray-50 border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 transition">
-                <option value="24">24 Heures</option>
-                <option value="168">7 Jours</option>
-                <option value="720">30 Jours</option>
-                <option value="never">À vie (jusqu'à la première utilisation)</option>
-            </select>
-        </div>
+        <p class="text-center text-slate-600 mb-6">
+            Ce lien est à usage unique. Vous devrez créer un nouveau lien pour chaque personne que vous voulez inviter sur cette parcelle.
+        </p>
         <div class="grid grid-cols-2 gap-3">
             <button id="close-share-modal-btn" class="w-full px-6 py-3 bg-gray-200 text-gray-800 rounded-lg hover:bg-gray-300">Annuler</button>
             <button id="generate-share-link-btn" class="w-full px-6 py-3 bg-blue-600 text-white font-bold rounded-lg hover:bg-blue-700">Générer le lien</button>
@@ -99,13 +109,8 @@ function showShareOptionsModal(fieldId) {
         generateBtn.disabled = true;
         generateBtn.textContent = 'Génération...';
 
-        const durationHours = document.getElementById('share-duration-select').value;
-        
-        let expiresAt = null;
-        if (durationHours !== 'never') {
-            expiresAt = new Date();
-            expiresAt.setHours(expiresAt.getHours() + parseInt(durationHours, 10));
-        }
+        const expiresAt = new Date();
+        expiresAt.setHours(expiresAt.getHours() + 24);
 
         try {
             const token = `token_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
@@ -140,15 +145,9 @@ export function showMultiShareOptionsModal(fieldIds, selectedCrops) {
 
     modalContent.innerHTML = `
         <h3 class="text-xl font-semibold mb-4 text-center">${title}</h3>
-        <div class="mb-6">
-            <label for="share-duration-select" class="block text-sm font-medium text-gray-700 mb-2">Durée de validité du lien :</label>
-            <select id="share-duration-select" class="w-full p-3 bg-gray-50 border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 transition">
-                <option value="24">24 Heures</option>
-                <option value="168">7 Jours</option>
-                <option value="720">30 Jours</option>
-                <option value="never">À vie (jusqu'à la première utilisation)</option>
-            </select>
-        </div>
+        <p class="text-center text-slate-600 mb-6">
+            Ce lien est à usage unique. Vous devrez créer un nouveau lien pour chaque personne que vous voulez inviter sur ces parcelles.
+        </p>
         <div class="grid grid-cols-2 gap-3">
             <button id="close-share-modal-btn" class="w-full px-6 py-3 bg-gray-200 text-gray-800 rounded-lg hover:bg-gray-300">Annuler</button>
             <button id="generate-multi-share-link-btn" class="w-full px-6 py-3 bg-blue-600 text-white font-bold rounded-lg hover:bg-blue-700">Générer le lien</button>
@@ -167,13 +166,8 @@ export function showMultiShareOptionsModal(fieldIds, selectedCrops) {
         generateBtn.disabled = true;
         generateBtn.textContent = 'Génération...';
 
-        const durationHours = document.getElementById('share-duration-select').value;
-        
-        let expiresAt = null;
-        if (durationHours !== 'never') {
-            expiresAt = new Date();
-            expiresAt.setHours(expiresAt.getHours() + parseInt(durationHours, 10));
-        }
+        const expiresAt = new Date();
+        expiresAt.setHours(expiresAt.getHours() + 24);
 
         try {
             const token = `token_multi_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
@@ -202,7 +196,7 @@ function showGeneratedLinkModal(url) {
     const modalContent = document.getElementById('modal-content');
     modalContent.innerHTML = `
         <h3 class="text-xl font-semibold mb-4 text-center">Lien de partage généré</h3>
-        <p class="text-gray-600 text-center mb-4">Envoyez ce lien à la personne avec qui vous souhaitez partager. Il est à usage unique.</p>
+        <p class="text-gray-600 text-center mb-4">Envoyez ce lien à la personne avec qui vous souhaitez partager. Il est à usage unique et expirera dans 24 heures.</p>
         <div class="bg-gray-100 p-3 rounded-lg flex items-center justify-between">
             <input id="share-url-input" type="text" readonly value="${url}" class="bg-transparent border-none text-gray-700 text-sm flex-grow">
             <button id="copy-share-url-btn" class="ml-2 px-4 py-2 bg-green-600 text-white text-sm font-semibold rounded-lg hover:bg-green-700">Copier</button>
@@ -246,7 +240,7 @@ export async function handleShareToken(token, user) {
         }
 
         if (tokenData.ownerId === user.uid) {
-            showToast("Vous ne pouvez pas partager une parcelle avec vous-même.");
+            showToast("Vous ne pouvez pas accepter votre propre partage.");
             await deleteDoc(tokenDocRef);
             return;
         }
@@ -270,6 +264,7 @@ export async function handleShareToken(token, user) {
         }
 
         await deleteDoc(tokenDocRef);
+        
         navigateToPage('shared-list');
 
     } catch (error) {
@@ -282,7 +277,128 @@ export async function handleShareToken(token, user) {
     }
 }
 
-// --- NOUVELLES FONCTIONS DE MODAL ---
+// --- NOUVELLES FONCTIONS POUR L'ONGLET "MES PARTAGES" ---
+
+function loadMySharedFields() {
+    if (!currentUser) return;
+    const q = query(collection(db, 'users', currentUser.uid, 'fields'), where("accessControl", "!=", []));
+    
+    unsubscribeMyShares = onSnapshot(q, (snapshot) => {
+        myFieldsWithShares = snapshot.docs
+            .map(doc => ({ id: doc.id, ...doc.data() }));
+        displayMySharesList();
+    }, (error) => {
+        console.error("Erreur de chargement de mes partages:", error);
+        mySharesListContainer.innerHTML = `<p class="text-center text-red-500 mt-8">Impossible de charger la liste de vos partages.</p>`;
+    });
+}
+
+// MODIFIÉ: Logique entièrement revue pour grouper par utilisateur
+async function displayMySharesList() {
+    if (!mySharesListContainer) return;
+
+    const usersWithAccess = {};
+
+    // 1. Grouper les parcelles par utilisateur
+    myFieldsWithShares.forEach(field => {
+        field.accessControl.forEach(userId => {
+            if (!usersWithAccess[userId]) {
+                usersWithAccess[userId] = { fields: [] };
+            }
+            usersWithAccess[userId].fields.push(field);
+        });
+    });
+
+    if (Object.keys(usersWithAccess).length === 0) {
+        mySharesListContainer.innerHTML = `<div class="text-center text-slate-500 mt-8 p-6 bg-slate-100 rounded-lg">
+            <h3 class="font-semibold text-slate-700">Aucune parcelle partagée</h3>
+            <p class="text-sm mt-1">Vous n'avez partagé aucune de vos parcelles pour le moment.</p>
+        </div>`;
+        return;
+    }
+
+    // 2. Récupérer les informations des utilisateurs
+    const userIds = Object.keys(usersWithAccess);
+    const userPromises = userIds.map(id => getDoc(doc(db, "users", id)));
+    const userDocs = await Promise.all(userPromises);
+
+    userDocs.forEach((userDoc, index) => {
+        if (userDoc.exists()) {
+            usersWithAccess[userIds[index]].name = userDoc.data().name || 'Utilisateur inconnu';
+        } else {
+            usersWithAccess[userIds[index]].name = 'Utilisateur supprimé';
+        }
+    });
+
+    // 3. Afficher la liste groupée
+    mySharesListContainer.innerHTML = ''; // Vider la liste
+    for (const userId in usersWithAccess) {
+        const userData = usersWithAccess[userId];
+        const userCard = document.createElement('div');
+        userCard.className = 'bg-white rounded-xl shadow-sm border border-slate-200';
+        
+        const fieldListHTML = userData.fields.map(field => 
+            `<li class="text-sm text-slate-600">${field.name}</li>`
+        ).join('');
+
+        userCard.innerHTML = `
+            <div class="share-user-card-header flex justify-between items-center p-4 cursor-pointer">
+                <span class="font-bold text-slate-800">${userData.name}</span>
+                <div class="flex items-center gap-4">
+                    <button class="revoke-all-access-btn text-xs font-semibold text-red-500 hover:text-red-700" 
+                            data-user-id="${userId}" 
+                            data-user-name="${userData.name}">
+                        Tout révoquer
+                    </button>
+                    <svg class="w-5 h-5 text-slate-400 transition-transform" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor">
+                        <path fill-rule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clip-rule="evenodd" />
+                    </svg>
+                </div>
+            </div>
+            <div class="share-user-card-content hidden border-t border-slate-100 px-4 pb-4 pt-2">
+                <p class="text-sm font-semibold text-slate-600 mb-2">Accès aux parcelles :</p>
+                <ul class="list-disc list-inside space-y-1">
+                    ${fieldListHTML}
+                </ul>
+            </div>
+        `;
+        mySharesListContainer.appendChild(userCard);
+    }
+}
+
+// NOUVEAU: Fonction pour révoquer tous les accès d'un utilisateur
+function handleRevokeAllAccessForUser(userIdToRevoke, userName) {
+    const message = `Êtes-vous sûr de vouloir révoquer <strong>tous les accès</strong> de <strong>${userName}</strong> ? Il/Elle ne pourra plus voir aucune de vos parcelles.`;
+    
+    const action = async () => {
+        if (!currentUser) return;
+        
+        const batch = writeBatch(db);
+        
+        // Trouver toutes les parcelles où cet utilisateur a accès
+        const fieldsToUpdate = myFieldsWithShares.filter(field => field.accessControl.includes(userIdToRevoke));
+
+        fieldsToUpdate.forEach(field => {
+            const fieldRef = doc(db, "users", currentUser.uid, "fields", field.id);
+            batch.update(fieldRef, {
+                accessControl: arrayRemove(userIdToRevoke)
+            });
+        });
+
+        try {
+            await batch.commit();
+            showToast(`Tous les accès de ${userName} ont été révoqués.`);
+        } catch (error) {
+            console.error("Erreur lors de la révocation de tous les accès :", error);
+            showToast("Une erreur est survenue.");
+        }
+    };
+
+    showConfirmationModal(message, action);
+}
+
+
+// --- Fonctions existantes pour les partages reçus ---
 
 function closeModal() {
     if (modalContainer) modalContainer.classList.add('hidden');
