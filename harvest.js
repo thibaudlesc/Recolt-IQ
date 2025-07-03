@@ -37,7 +37,7 @@ let currentUser = null;
 let userProfile = {};
 let harvestData = {};
 let myTrailerNames = []; // Noms de bennes de l'utilisateur connecté
-let activeTrailerNames = []; // Noms de bennes pour le contexte actuel (peut être celles du propriétaire)
+let activeTrailerNames = []; // Noms de bennes pour le contexte actuel (toujours celles de l'utilisateur connecté maintenant)
 let currentFieldKey = null;
 let currentFieldOwnerId = null;
 let selectedCrops = [];
@@ -184,29 +184,10 @@ async function displayFieldDetails(fieldKey, ownerId) {
     console.log(`> Propriétaire: ${ownerId}`);
     console.log(`> Utilisateur actuel: ${currentUser ? currentUser.uid : 'null'}`);
 
-    // CORRECTION: Logique pour déterminer quelle liste de bennes utiliser.
-    const isOwner = currentUser.uid === ownerId;
-    if (isOwner) {
-        // Si l'utilisateur est le propriétaire, on charge ses propres noms de bennes.
-        try {
-            const trailerNamesCollectionRef = collection(db, "users", ownerId, "trailerNames");
-            console.log(`[DEBUG] Propriétaire: Tentative de lecture de la collection: ${trailerNamesCollectionRef.path}`);
-            const trailerNamesSnapshot = await getDocs(trailerNamesCollectionRef);
-            activeTrailerNames = trailerNamesSnapshot.docs.map(d => ({ id: d.id, ...d.data() }));
-            activeTrailerNames.sort((a, b) => a.name.localeCompare(b.name));
-            console.log(`[DEBUG] Noms de bennes du propriétaire chargés avec succès:`, activeTrailerNames);
-        } catch (error) {
-            console.error("Erreur de chargement des noms de bennes:", error);
-            showToast("Impossible de charger la liste des bennes.");
-            activeTrailerNames = [];
-        }
-    } else {
-        // Si l'utilisateur est un collaborateur, on utilise sa propre liste de bennes (myTrailerNames).
-        console.log(`[DEBUG] Collaborateur: Utilisation de sa propre liste de bennes.`);
-        activeTrailerNames = [...myTrailerNames];
-        console.log(`[DEBUG] Noms de bennes du collaborateur chargés:`, activeTrailerNames);
-    }
-
+    // MODIFIÉ: Chaque utilisateur utilise sa propre liste de noms de bennes.
+    console.log(`[DEBUG] Utilisation de la liste de bennes de l'utilisateur connecté.`);
+    activeTrailerNames = [...myTrailerNames];
+    console.log(`[DEBUG] Noms de bennes chargés:`, activeTrailerNames);
 
     const fieldDocRef = doc(db, "users", ownerId, "fields", fieldKey);
     console.log(`[DEBUG] Mise en place de onSnapshot pour: ${fieldDocRef.path}`);
@@ -919,17 +900,13 @@ async function handleAddNewTrailerName() {
     }
 
     try {
-        // CORRECTION: On ajoute toujours le nom de benne à la liste de l'utilisateur connecté.
         const trailerNamesCollectionRef = collection(db, 'users', currentUser.uid, 'trailerNames');
         console.log(`[DEBUG] Tentative d'ajout dans: ${trailerNamesCollectionRef.path}`);
         
-        const newDoc = await addDoc(trailerNamesCollectionRef, { name: name });
+        await addDoc(trailerNamesCollectionRef, { name: name });
         
-        // On met à jour la liste locale (myTrailerNames) qui est maintenant utilisée comme source unique.
-        myTrailerNames.push({ id: newDoc.id, name });
-        myTrailerNames.sort((a, b) => a.name.localeCompare(b.name));
-        activeTrailerNames = [...myTrailerNames]; // On s'assure que la liste active est aussi à jour.
-
+        // La mise à jour de la liste locale se fera via onSnapshot,
+        // mais on peut forcer un rafraîchissement du modal si besoin.
         showManageTrailerNamesModal();
     } catch (error) {
         console.error("Error adding trailer name:", error);
@@ -939,7 +916,6 @@ async function handleAddNewTrailerName() {
 
 async function handleDeleteTrailerName(nameId) {
     try {
-        // CORRECTION: On supprime toujours le nom de benne de la liste de l'utilisateur connecté.
         const trailerNameDocRef = doc(db, 'users', currentUser.uid, 'trailerNames', nameId);
         await deleteDoc(trailerNameDocRef);
         
