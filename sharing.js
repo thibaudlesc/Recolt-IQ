@@ -1,6 +1,6 @@
 // sharing.js
 
-import { db, doc, getDoc, updateDoc, setDoc, onSnapshot, collection, addDoc, query, where, deleteDoc, arrayUnion, arrayRemove, collectionGroup, writeBatch } from './firebase-config.js';
+import { db, doc, getDoc, getDocs, updateDoc, setDoc, onSnapshot, collection, addDoc, query, where, deleteDoc, arrayUnion, arrayRemove, collectionGroup, writeBatch } from './firebase-config.js';
 import { showToast, navigateToPage, showConfirmationModal, createFilterButton } from './harvest.js';
 
 // --- SÉLECTION DES ÉLÉMENTS DU DOM ---
@@ -42,19 +42,24 @@ export function initSharing(user) {
             }
         });
 
-        // MODIFIÉ: Listener pour la nouvelle vue de gestion des partages
+        // Listener pour la gestion des partages (individuel et total)
         mySharesListContainer.addEventListener('click', (e) => {
             const header = e.target.closest('.share-user-card-header');
-            const revokeBtn = e.target.closest('.revoke-all-access-btn');
+            const revokeAllBtn = e.target.closest('.revoke-all-access-btn');
+            const revokeSingleBtn = e.target.closest('.revoke-single-access-btn');
 
-            if (revokeBtn) {
-                e.stopPropagation(); // Empêche l'ouverture/fermeture de l'accordéon
-                const { userId, userName } = revokeBtn.dataset;
+            if (revokeAllBtn) {
+                e.stopPropagation();
+                const { userId, userName } = revokeAllBtn.dataset;
                 handleRevokeAllAccessForUser(userId, userName);
+            } else if (revokeSingleBtn) {
+                e.stopPropagation();
+                const { fieldId, userId, userName, fieldName } = revokeSingleBtn.dataset;
+                handleRevokeSingleAccessForUser(fieldId, userId, userName, fieldName);
             } else if (header) {
                 const content = header.nextElementSibling;
                 content.classList.toggle('hidden');
-                const icon = header.querySelector('svg');
+                const icon = header.querySelector('svg.accordion-icon');
                 icon.classList.toggle('rotate-180');
             }
         });
@@ -245,6 +250,13 @@ export async function handleShareToken(token, user) {
             return;
         }
         
+        // Créer la relation de partage pour les permissions
+        const shareRef = doc(db, "user_shares", tokenData.ownerId, "sharers", user.uid);
+        await setDoc(shareRef, {
+            userName: user.displayName || user.email,
+            sharedAt: new Date()
+        });
+
         if (tokenData.type === 'multi' && Array.isArray(tokenData.fieldIds)) {
             const batch = writeBatch(db);
             for (const fieldId of tokenData.fieldIds) {
@@ -293,7 +305,6 @@ function loadMySharedFields() {
     });
 }
 
-// MODIFIÉ: Logique entièrement revue pour grouper par utilisateur
 async function displayMySharesList() {
     if (!mySharesListContainer) return;
 
@@ -301,12 +312,14 @@ async function displayMySharesList() {
 
     // 1. Grouper les parcelles par utilisateur
     myFieldsWithShares.forEach(field => {
-        field.accessControl.forEach(userId => {
-            if (!usersWithAccess[userId]) {
-                usersWithAccess[userId] = { fields: [] };
-            }
-            usersWithAccess[userId].fields.push(field);
-        });
+        if (field.accessControl && field.accessControl.length > 0) {
+            field.accessControl.forEach(userId => {
+                if (!usersWithAccess[userId]) {
+                    usersWithAccess[userId] = { fields: [] };
+                }
+                usersWithAccess[userId].fields.push(field);
+            });
+        }
     });
 
     if (Object.keys(usersWithAccess).length === 0) {
@@ -337,8 +350,18 @@ async function displayMySharesList() {
         const userCard = document.createElement('div');
         userCard.className = 'bg-white rounded-xl shadow-sm border border-slate-200';
         
+        // MODIFIÉ: Ajout d'un bouton de révocation pour chaque parcelle
         const fieldListHTML = userData.fields.map(field => 
-            `<li class="text-sm text-slate-600">${field.name}</li>`
+            `<li class="flex justify-between items-center py-1 group">
+                <span class="text-sm text-slate-600">${field.name}</span>
+                <button class="revoke-single-access-btn text-xs font-semibold text-red-500 hover:text-red-700 opacity-0 group-hover:opacity-100 transition-opacity"
+                        data-field-id="${field.id}"
+                        data-user-id="${userId}"
+                        data-user-name="${userData.name}"
+                        data-field-name="${field.name}">
+                    Révoquer
+                </button>
+            </li>`
         ).join('');
 
         userCard.innerHTML = `
@@ -350,14 +373,14 @@ async function displayMySharesList() {
                             data-user-name="${userData.name}">
                         Tout révoquer
                     </button>
-                    <svg class="w-5 h-5 text-slate-400 transition-transform" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor">
+                    <svg class="w-5 h-5 text-slate-400 transition-transform accordion-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor">
                         <path fill-rule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clip-rule="evenodd" />
                     </svg>
                 </div>
             </div>
             <div class="share-user-card-content hidden border-t border-slate-100 px-4 pb-4 pt-2">
                 <p class="text-sm font-semibold text-slate-600 mb-2">Accès aux parcelles :</p>
-                <ul class="list-disc list-inside space-y-1">
+                <ul class="space-y-1">
                     ${fieldListHTML}
                 </ul>
             </div>
@@ -366,7 +389,36 @@ async function displayMySharesList() {
     }
 }
 
-// NOUVEAU: Fonction pour révoquer tous les accès d'un utilisateur
+function handleRevokeSingleAccessForUser(fieldId, userIdToRevoke, userName, fieldName) {
+    const message = `Êtes-vous sûr de vouloir révoquer l'accès de <strong>${userName}</strong> à la parcelle <strong>${fieldName}</strong> ?`;
+
+    const action = async () => {
+        if (!currentUser) return;
+        const fieldDocRef = doc(db, "users", currentUser.uid, "fields", fieldId);
+        try {
+            await updateDoc(fieldDocRef, {
+                accessControl: arrayRemove(userIdToRevoke)
+            });
+            
+            // Vérifier s'il reste d'autres partages pour cet utilisateur
+            const q = query(collection(db, 'users', currentUser.uid, 'fields'), where('accessControl', 'array-contains', userIdToRevoke));
+            const snapshot = await getDocs(q);
+            if (snapshot.empty) {
+                const shareRef = doc(db, "user_shares", currentUser.uid, "sharers", userIdToRevoke);
+                await deleteDoc(shareRef);
+                showToast(`Accès à ${fieldName} révoqué. C'était le dernier partage avec ${userName}.`);
+            } else {
+                showToast(`Accès à ${fieldName} révoqué pour ${userName}.`);
+            }
+        } catch (error) {
+            console.error("Erreur lors de la révocation de l'accès :", error);
+            showToast("Une erreur est survenue.");
+        }
+    };
+
+    showConfirmationModal(message, action);
+}
+
 function handleRevokeAllAccessForUser(userIdToRevoke, userName) {
     const message = `Êtes-vous sûr de vouloir révoquer <strong>tous les accès</strong> de <strong>${userName}</strong> ? Il/Elle ne pourra plus voir aucune de vos parcelles.`;
     
@@ -374,8 +426,6 @@ function handleRevokeAllAccessForUser(userIdToRevoke, userName) {
         if (!currentUser) return;
         
         const batch = writeBatch(db);
-        
-        // Trouver toutes les parcelles où cet utilisateur a accès
         const fieldsToUpdate = myFieldsWithShares.filter(field => field.accessControl.includes(userIdToRevoke));
 
         fieldsToUpdate.forEach(field => {
@@ -387,6 +437,8 @@ function handleRevokeAllAccessForUser(userIdToRevoke, userName) {
 
         try {
             await batch.commit();
+            const shareRef = doc(db, "user_shares", currentUser.uid, "sharers", userIdToRevoke);
+            await deleteDoc(shareRef);
             showToast(`Tous les accès de ${userName} ont été révoqués.`);
         } catch (error) {
             console.error("Erreur lors de la révocation de tous les accès :", error);

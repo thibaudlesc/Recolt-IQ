@@ -1,12 +1,12 @@
 // harvest.js
 
-import { db, doc, getDoc, updateDoc, onSnapshot, collection, addDoc, query, where, deleteDoc, arrayRemove } from './firebase-config.js';
+import { db, doc, getDoc, getDocs, updateDoc, onSnapshot, collection, addDoc, query, where, deleteDoc, arrayRemove } from './firebase-config.js';
 import { generateShareLink, showMultiShareOptionsModal } from './sharing.js';
 
 // --- DOM Element Selection ---
 const pageFieldList = document.getElementById('page-field-list');
 const pageSharedFieldList = document.getElementById('page-shared-field-list');
-const pageMyShares = document.getElementById('page-my-shares'); // NOUVEAU
+const pageMyShares = document.getElementById('page-my-shares');
 const pageFieldDetails = document.getElementById('page-field-details');
 const cropFiltersContainer = document.getElementById('crop-filters-container');
 const openFilterModalBtn = document.getElementById('open-filter-modal-btn'); 
@@ -18,7 +18,7 @@ const trailersListContainer = document.getElementById('trailers-list');
 const addTrailerFab = document.getElementById('add-trailer-fab');
 const navFieldsBtn = document.getElementById('nav-fields');
 const navSharedFieldsBtn = document.getElementById('nav-shared-fields');
-const navMySharesBtn = document.getElementById('nav-my-shares'); // NOUVEAU
+const navMySharesBtn = document.getElementById('nav-my-shares');
 const navExportBtn = document.getElementById('nav-export');
 const modalContainer = document.getElementById('modal-container');
 const modalContent = document.getElementById('modal-content');
@@ -36,12 +36,13 @@ const qualityInfoCards = document.getElementById('quality-info-cards');
 let currentUser = null;
 let userProfile = {};
 let harvestData = {};
-let trailerNames = []; 
+let myTrailerNames = []; // Noms de bennes de l'utilisateur connecté
+let activeTrailerNames = []; // Noms de bennes pour le contexte actuel (peut être celles du propriétaire)
 let currentFieldKey = null;
 let currentFieldOwnerId = null;
 let selectedCrops = [];
 let unsubscribeFields;
-let unsubscribeTrailerNames;
+let unsubscribeMyTrailerNames;
 let onConfirmAction = null;
 let currentView = 'my-fields';
 let areNavListenersInitialized = false;
@@ -51,7 +52,7 @@ export function initHarvestApp(user, profile) {
     currentUser = user;
     userProfile = profile;
     if (unsubscribeFields) unsubscribeFields();
-    if (unsubscribeTrailerNames) unsubscribeTrailerNames();
+    if (unsubscribeMyTrailerNames) unsubscribeMyTrailerNames();
 
     const fieldsCollectionRef = collection(db, 'users', currentUser.uid, 'fields');
     unsubscribeFields = onSnapshot(query(fieldsCollectionRef), (snapshot) => {
@@ -66,17 +67,16 @@ export function initHarvestApp(user, profile) {
         }
     }, (error) => showToast("Erreur de chargement des parcelles."));
 
-    const trailerNamesCollectionRef = collection(db, 'users', currentUser.uid, 'trailerNames');
-    unsubscribeTrailerNames = onSnapshot(trailerNamesCollectionRef, (snapshot) => {
-        trailerNames = [];
-        snapshot.forEach(doc => trailerNames.push({ id: doc.id, ...doc.data() }));
-        trailerNames.sort((a, b) => a.name.localeCompare(b.name));
-    }, (error) => showToast("Erreur de chargement des bennes."));
+    const myTrailerNamesCollectionRef = collection(db, 'users', currentUser.uid, 'trailerNames');
+    unsubscribeMyTrailerNames = onSnapshot(myTrailerNamesCollectionRef, (snapshot) => {
+        myTrailerNames = [];
+        snapshot.forEach(doc => myTrailerNames.push({ id: doc.id, ...doc.data() }));
+        myTrailerNames.sort((a, b) => a.name.localeCompare(b.name));
+    }, (error) => showToast("Erreur de chargement de vos noms de bennes."));
 
     setupEventListeners();
 }
 
-// MODIFIÉ: Ajout de la gestion de la nouvelle page 'my-shares'
 export function navigateToPage(page, key = null, ownerId = null) {
     pageFieldList.classList.toggle('hidden', page !== 'list');
     pageSharedFieldList.classList.toggle('hidden', page !== 'shared-list');
@@ -102,7 +102,6 @@ export function navigateToPage(page, key = null, ownerId = null) {
     }
 }
 
-// MODIFIÉ: Ajout de la gestion du bouton actif pour 'my-shares'
 export function updateActiveNav(activeView) {
     document.querySelectorAll('.nav-btn').forEach(btn => {
         btn.classList.remove('active', 'text-green-600');
@@ -180,8 +179,18 @@ function displayFieldList() {
 }
 
 async function displayFieldDetails(fieldKey, ownerId) {
+    try {
+        const trailerNamesCollectionRef = collection(db, "users", ownerId, "trailerNames");
+        const trailerNamesSnapshot = await getDocs(trailerNamesCollectionRef);
+        activeTrailerNames = trailerNamesSnapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+        activeTrailerNames.sort((a, b) => a.name.localeCompare(b.name));
+    } catch (error) {
+        console.error("Erreur de chargement des noms de bennes partagés:", error);
+        showToast("Impossible de charger la liste des bennes.");
+        activeTrailerNames = [];
+    }
+
     const fieldDocRef = doc(db, "users", ownerId, "fields", fieldKey);
-    
     onSnapshot(fieldDocRef, (fieldDocSnap) => {
         if (!fieldDocSnap.exists()) {
             showToast("Impossible de charger les détails de cette parcelle.");
@@ -324,9 +333,7 @@ function openModal(content, type) {
     modalContainer.classList.remove('hidden');
 
     const listeners = {
-        'stats': () => {
-            document.getElementById('stats-modal-close-btn').addEventListener('click', closeModal);
-        },
+        'stats': () => document.getElementById('stats-modal-close-btn').addEventListener('click', closeModal),
         'addField': () => {
             document.getElementById('modal-cancel-btn').addEventListener('click', closeModal);
             document.getElementById('modal-confirm-btn').addEventListener('click', handleSaveNewField);
@@ -346,8 +353,7 @@ function openModal(content, type) {
         'weight': () => {
             document.getElementById('modal-cancel-btn').addEventListener('click', closeModal);
             document.getElementById('modal-confirm-btn').addEventListener('click', handleConfirmWeight);
-            const addBtn = document.getElementById('add-trailer-name-btn');
-            if (addBtn) addBtn.addEventListener('click', showAddTrailerNameModal);
+            document.getElementById('manage-trailer-names-btn').addEventListener('click', showManageTrailerNamesModal);
         },
         'edit': () => {
             document.getElementById('edit-modal-cancel-btn').addEventListener('click', closeModal);
@@ -360,9 +366,15 @@ function openModal(content, type) {
                 closeModal();
             });
         },
-        'addTrailerName': () => {
+        'manageTrailerNames': () => {
             document.getElementById('add-trailer-name-cancel-btn').addEventListener('click', () => showWeightModal('full'));
             document.getElementById('add-trailer-name-confirm-btn').addEventListener('click', handleAddNewTrailerName);
+            document.getElementById('trailer-names-list').addEventListener('click', (e) => {
+                const deleteBtn = e.target.closest('.delete-trailer-name-btn');
+                if (deleteBtn) {
+                    handleDeleteTrailerName(deleteBtn.dataset.id);
+                }
+            });
         },
         'filterModal': () => {
             document.getElementById('modal-cancel-btn').addEventListener('click', closeModal);
@@ -376,7 +388,6 @@ function openModal(content, type) {
                     if (crop === 'all') {
                         selectedCrops = [];
                     } else {
-                        // Toggle selection
                         const index = selectedCrops.indexOf(crop);
                         if (index > -1) {
                             selectedCrops.splice(index, 1);
@@ -384,8 +395,8 @@ function openModal(content, type) {
                             selectedCrops.push(crop);
                         }
                     }
-                    displayCropFilters(); // Update desktop view
-                    displayFieldList();   // Update list
+                    displayCropFilters();
+                    displayFieldList();
                     closeModal();
                 });
             }
@@ -502,7 +513,6 @@ function showFilterModal() {
     openModal(content, 'filterModal');
 }
 
-
 function showWeightModal(mode, index = -1) {
     const fieldDocRef = doc(db, "users", currentFieldOwnerId, "fields", currentFieldKey);
     getDoc(fieldDocRef).then(fieldDocSnap => {
@@ -512,13 +522,14 @@ function showWeightModal(mode, index = -1) {
         
         let content = '';
         if (mode === 'full') {
-            const trailerOptions = trailerNames.map(t => `<option value="${t.name}">${t.name}</option>`).join('');
+            const trailerOptions = activeTrailerNames.map(t => `<option value="${t.name}">${t.name}</option>`).join('');
             const baleInputHTML = isLinCrop ? `
                 <div>
                     <label for="bale-count-input" class="block text-sm font-medium text-slate-700 mb-1">Nombre de bottes</label>
                     <input type="number" inputmode="numeric" id="bale-count-input" class="w-full p-4 border-2 border-slate-300 rounded-lg text-xl text-center" placeholder="0">
                 </div>` : '';
 
+            // MODIFIÉ: Remplacement de l'icône
             content = `
                 <h3 class="text-xl font-semibold mb-6 text-center">Nouvelle benne pleine</h3>
                 <div class="space-y-4">
@@ -529,8 +540,11 @@ function showWeightModal(mode, index = -1) {
                                 <option value="">Sélectionner...</option>
                                 ${trailerOptions}
                             </select>
-                            <button id="add-trailer-name-btn" class="p-3 bg-slate-200 rounded-lg hover:bg-slate-300 transition shrink-0">
-                                <svg class="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15" /></svg>
+                            <button id="manage-trailer-names-btn" class="p-3 bg-slate-200 rounded-lg hover:bg-slate-300 transition shrink-0" title="Gérer les noms">
+                                <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                                    <path stroke-linecap="round" stroke-linejoin="round" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.096 2.572-1.065z" />
+                                    <path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                                </svg>
                             </button>
                         </div>
                     </div>
@@ -611,18 +625,32 @@ function showEditModal(index) {
     });
 }
 
+function showManageTrailerNamesModal() {
+    const listItems = activeTrailerNames.map(t => `
+        <li class="flex justify-between items-center bg-slate-100 p-2 rounded-md">
+            <span class="text-sm font-medium text-slate-800">${t.name}</span>
+            <button class="delete-trailer-name-btn p-1 text-red-500 hover:text-red-700" data-id="${t.id}" title="Supprimer ce nom">
+                <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 01-2.244 2.077H8.084a2.25 2.25 0 01-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 00-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 013.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 00-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 00-7.5 0" /></svg>
+            </button>
+        </li>
+    `).join('');
 
-function showAddTrailerNameModal() {
     const content = `
-        <h3 class="text-xl font-semibold mb-6 text-center">Ajouter un nom de benne</h3>
-        <input type="text" id="new-trailer-name-input" class="w-full p-4 border-2 border-slate-300 rounded-lg text-lg text-center" placeholder="Ex: Benne Rouge">
-        <p id="add-trailer-name-error" class="text-red-500 text-sm hidden text-center mt-2"></p>
-        <div class="mt-8 grid grid-cols-2 gap-4">
-            <button id="add-trailer-name-cancel-btn" class="px-6 py-3 bg-slate-200 rounded-lg">Annuler</button>
+        <h3 class="text-xl font-semibold mb-4 text-center">Gérer les noms de bennes</h3>
+        <div class="space-y-3 mb-4 max-h-48 overflow-y-auto" id="trailer-names-list">
+            ${listItems || '<p class="text-center text-sm text-slate-500">Aucun nom enregistré.</p>'}
+        </div>
+        <div class="border-t pt-4">
+            <label for="new-trailer-name-input" class="block text-sm font-medium text-slate-700 mb-1">Ajouter un nouveau nom</label>
+            <input type="text" id="new-trailer-name-input" class="w-full p-3 border-2 border-slate-300 rounded-lg" placeholder="Ex: Benne Rouge">
+            <p id="add-trailer-name-error" class="text-red-500 text-sm hidden mt-1"></p>
+        </div>
+        <div class="mt-6 grid grid-cols-2 gap-4">
+            <button id="add-trailer-name-cancel-btn" class="px-6 py-3 bg-slate-200 rounded-lg">Retour</button>
             <button id="add-trailer-name-confirm-btn" class="px-6 py-3 bg-blue-600 text-white font-bold rounded-lg">Ajouter</button>
         </div>
     `;
-    openModal(content, 'addTrailerName');
+    openModal(content, 'manageTrailerNames');
 }
 
 export function showConfirmationModal(message, onConfirm) {
@@ -872,13 +900,28 @@ async function handleAddNewTrailerName() {
     }
 
     try {
-        const trailerNamesCollectionRef = collection(db, 'users', currentUser.uid, 'trailerNames');
-        await addDoc(trailerNamesCollectionRef, { name: name });
-        showToast(`Benne "${name}" ajoutée.`);
-        showWeightModal('full');
+        const trailerNamesCollectionRef = collection(db, 'users', currentFieldOwnerId, 'trailerNames');
+        const newDoc = await addDoc(trailerNamesCollectionRef, { name: name });
+        
+        activeTrailerNames.push({ id: newDoc.id, name });
+        activeTrailerNames.sort((a, b) => a.name.localeCompare(b.name));
+        showManageTrailerNamesModal();
     } catch (error) {
         console.error("Error adding trailer name:", error);
         showToast("Erreur lors de l'ajout.");
+    }
+}
+
+async function handleDeleteTrailerName(nameId) {
+    try {
+        const trailerNameDocRef = doc(db, 'users', currentFieldOwnerId, 'trailerNames', nameId);
+        await deleteDoc(trailerNameDocRef);
+        
+        activeTrailerNames = activeTrailerNames.filter(t => t.id !== nameId);
+        showManageTrailerNamesModal();
+    } catch (error) {
+        console.error("Error deleting trailer name:", error);
+        showToast("Erreur lors de la suppression.");
     }
 }
 
@@ -898,7 +941,6 @@ function handleShareFilteredFields() {
     showMultiShareOptionsModal(fieldIds, selectedCrops);
 }
 
-// MODIFIÉ: Ajout du listener pour le nouvel onglet 'nav-my-shares'
 function setupEventListeners() {
     if (areNavListenersInitialized) return;
 

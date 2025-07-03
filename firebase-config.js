@@ -9,14 +9,15 @@ import {
     onAuthStateChanged,
     signOut,
     sendPasswordResetEmail,
-    GoogleAuthProvider, // [NOUVEAU] Fournisseur d'authentification Google
-    signInWithPopup     // [NOUVEAU] Fonction pour la connexion via pop-up
+    GoogleAuthProvider,
+    signInWithPopup
 } from "https://www.gstatic.com/firebasejs/9.17.1/firebase-auth.js";
 import { 
     getFirestore, 
     doc, 
     setDoc, 
     getDoc, 
+    getDocs, // CORRIGÉ: Ajout de getDocs
     updateDoc, 
     onSnapshot, 
     collection, 
@@ -56,11 +57,12 @@ export {
     onAuthStateChanged,
     signOut,
     sendPasswordResetEmail,
-    GoogleAuthProvider, // [NOUVEAU]
-    signInWithPopup,    // [NOUVEAU]
+    GoogleAuthProvider,
+    signInWithPopup,
     doc, 
     setDoc, 
     getDoc,
+    getDocs, // CORRIGÉ: Ajout de getDocs à l'export
     updateDoc,
     onSnapshot,
     collection,

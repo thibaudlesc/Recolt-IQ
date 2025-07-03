@@ -30,19 +30,9 @@ service cloud.firestore {
 
     // --- Règle pour l'ACCÈS DIRECT aux parcelles ---
     match /users/{ownerId}/fields/{fieldId} {
-      // Permet de lire une seule parcelle (pour voir les détails ou accepter un partage).
       allow get: if request.auth != null;
-
-      // Permet au propriétaire de lister ses propres parcelles.
       allow list: if request.auth != null && isOwner(ownerId);
-
-      // Le propriétaire est le seul à pouvoir créer ou supprimer des parcelles.
       allow create, delete: if request.auth != null && isOwner(ownerId);
-
-      // [CORRECTION FINALE] La mise à jour est autorisée si :
-      // 1. On est le propriétaire.
-      // 2. On accepte un partage (ajout de soi-même à accessControl).
-      // 3. On est DÉJÀ dans la liste de partage (pour ajouter/modifier des bennes).
       allow update: if request.auth != null && (
         isOwner(ownerId) ||
         isAcceptingShare() ||
@@ -52,18 +42,28 @@ service cloud.firestore {
 
     // --- Règle pour la REQUÊTE sur le groupe de collections 'fields' (pour les partages) ---
     match /{path=**}/fields/{fieldId} {
-      // Autorise à lister les parcelles partagées avec soi.
       allow list: if request.auth != null && request.auth.uid in resource.data.accessControl;
     }
 
     // --- Règle pour les noms de bennes ---
-    match /users/{userId}/trailerNames/{trailerNameId} {
-       allow read, write: if isOwner(userId);
+    // MODIFIÉ: Autorise la lecture/écriture si une relation de partage existe
+    match /users/{ownerId}/trailerNames/{trailerNameId} {
+       allow read, write, delete: if request.auth.uid == ownerId || 
+                               exists(/databases/$(database)/documents/user_shares/$(ownerId)/sharers/$(request.auth.uid));
     }
 
     // --- Règle pour les jetons de partage ---
     match /shareTokens/{tokenId} {
       allow read, write, delete: if request.auth != null;
+    }
+    
+    // NOUVEAU: Collection pour gérer les permissions de partage
+    match /user_shares/{ownerId}/sharers/{sharerId} {
+        allow read: if request.auth.uid == ownerId || request.auth.uid == sharerId;
+        // Un utilisateur peut s'ajouter à la liste des partages d'un propriétaire (via un token sécurisé)
+        allow create: if request.auth.uid == sharerId;
+        // Seul le propriétaire peut retirer un utilisateur de sa liste de partage
+        allow delete: if request.auth.uid == ownerId;
     }
   }
 }
