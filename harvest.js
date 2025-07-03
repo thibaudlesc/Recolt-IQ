@@ -179,29 +179,36 @@ function displayFieldList() {
 }
 
 async function displayFieldDetails(fieldKey, ownerId) {
-    // AJOUT DE DEBUG
     console.log(`[DEBUG] Entrée dans displayFieldDetails`);
     console.log(`> Parcelle: ${fieldKey}`);
     console.log(`> Propriétaire: ${ownerId}`);
     console.log(`> Utilisateur actuel: ${currentUser ? currentUser.uid : 'null'}`);
 
-    try {
-        const trailerNamesCollectionRef = collection(db, "users", ownerId, "trailerNames");
-        // AJOUT DE DEBUG
-        console.log(`[DEBUG] Tentative de lecture de la collection: ${trailerNamesCollectionRef.path}`);
-        const trailerNamesSnapshot = await getDocs(trailerNamesCollectionRef);
-        activeTrailerNames = trailerNamesSnapshot.docs.map(d => ({ id: d.id, ...d.data() }));
-        activeTrailerNames.sort((a, b) => a.name.localeCompare(b.name));
-        // AJOUT DE DEBUG
-        console.log(`[DEBUG] Noms de bennes chargés avec succès:`, activeTrailerNames);
-    } catch (error) {
-        console.error("Erreur de chargement des noms de bennes partagés:", error);
-        showToast("Impossible de charger la liste des bennes.");
-        activeTrailerNames = [];
+    // CORRECTION: Logique pour déterminer quelle liste de bennes utiliser.
+    const isOwner = currentUser.uid === ownerId;
+    if (isOwner) {
+        // Si l'utilisateur est le propriétaire, on charge ses propres noms de bennes.
+        try {
+            const trailerNamesCollectionRef = collection(db, "users", ownerId, "trailerNames");
+            console.log(`[DEBUG] Propriétaire: Tentative de lecture de la collection: ${trailerNamesCollectionRef.path}`);
+            const trailerNamesSnapshot = await getDocs(trailerNamesCollectionRef);
+            activeTrailerNames = trailerNamesSnapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+            activeTrailerNames.sort((a, b) => a.name.localeCompare(b.name));
+            console.log(`[DEBUG] Noms de bennes du propriétaire chargés avec succès:`, activeTrailerNames);
+        } catch (error) {
+            console.error("Erreur de chargement des noms de bennes:", error);
+            showToast("Impossible de charger la liste des bennes.");
+            activeTrailerNames = [];
+        }
+    } else {
+        // Si l'utilisateur est un collaborateur, on utilise sa propre liste de bennes (myTrailerNames).
+        console.log(`[DEBUG] Collaborateur: Utilisation de sa propre liste de bennes.`);
+        activeTrailerNames = [...myTrailerNames];
+        console.log(`[DEBUG] Noms de bennes du collaborateur chargés:`, activeTrailerNames);
     }
 
+
     const fieldDocRef = doc(db, "users", ownerId, "fields", fieldKey);
-    // AJOUT DE DEBUG
     console.log(`[DEBUG] Mise en place de onSnapshot pour: ${fieldDocRef.path}`);
     onSnapshot(fieldDocRef, (fieldDocSnap) => {
         if (!fieldDocSnap.exists()) {
@@ -263,7 +270,6 @@ async function displayFieldDetails(fieldKey, ownerId) {
         });
 
     }, (error) => {
-        // AJOUT DE DEBUG
         console.error(`[DEBUG] ERREUR onSnapshot sur ${fieldDocRef.path}`, error);
         console.error("Erreur de lecture des détails de la parcelle: ", error);
         showToast("Erreur de chargement des détails.");
@@ -554,7 +560,7 @@ function showWeightModal(mode, index = -1) {
                                 ${trailerOptions}
                             </select>
                             <button id="manage-trailer-names-btn" class="p-3 bg-slate-200 rounded-lg hover:bg-slate-300 transition shrink-0" title="Gérer les noms">
-                                <svg xmlns="[http://www.w3.org/2000/svg](http://www.w3.org/2000/svg)" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                                <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
                                     <path stroke-linecap="round" stroke-linejoin="round" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.096 2.572-1.065z" />
                                     <path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
                                 </svg>
@@ -913,15 +919,17 @@ async function handleAddNewTrailerName() {
     }
 
     try {
-        const trailerNamesCollectionRef = collection(db, 'users', currentFieldOwnerId, 'trailerNames');
-        // AJOUT DE DEBUG
+        // CORRECTION: On ajoute toujours le nom de benne à la liste de l'utilisateur connecté.
+        const trailerNamesCollectionRef = collection(db, 'users', currentUser.uid, 'trailerNames');
         console.log(`[DEBUG] Tentative d'ajout dans: ${trailerNamesCollectionRef.path}`);
-        console.log(`> Propriétaire: ${currentFieldOwnerId}`);
-        console.log(`> Utilisateur actuel: ${currentUser ? currentUser.uid : 'null'}`);
+        
         const newDoc = await addDoc(trailerNamesCollectionRef, { name: name });
         
-        activeTrailerNames.push({ id: newDoc.id, name });
-        activeTrailerNames.sort((a, b) => a.name.localeCompare(b.name));
+        // On met à jour la liste locale (myTrailerNames) qui est maintenant utilisée comme source unique.
+        myTrailerNames.push({ id: newDoc.id, name });
+        myTrailerNames.sort((a, b) => a.name.localeCompare(b.name));
+        activeTrailerNames = [...myTrailerNames]; // On s'assure que la liste active est aussi à jour.
+
         showManageTrailerNamesModal();
     } catch (error) {
         console.error("Error adding trailer name:", error);
@@ -931,10 +939,11 @@ async function handleAddNewTrailerName() {
 
 async function handleDeleteTrailerName(nameId) {
     try {
-        const trailerNameDocRef = doc(db, 'users', currentFieldOwnerId, 'trailerNames', nameId);
+        // CORRECTION: On supprime toujours le nom de benne de la liste de l'utilisateur connecté.
+        const trailerNameDocRef = doc(db, 'users', currentUser.uid, 'trailerNames', nameId);
         await deleteDoc(trailerNameDocRef);
         
-        activeTrailerNames = activeTrailerNames.filter(t => t.id !== nameId);
+        // La mise à jour des listes locales se fera automatiquement via le listener onSnapshot.
         showManageTrailerNamesModal();
     } catch (error) {
         console.error("Error deleting trailer name:", error);
