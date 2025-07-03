@@ -48,7 +48,7 @@ service cloud.firestore {
     // --- Règle pour les noms de bennes ---
     // MODIFIÉ: Autorise la lecture/écriture si une relation de partage existe
     match /users/{ownerId}/trailerNames/{trailerNameId} {
-       allow read, write: if request.auth.uid == ownerId || 
+       allow read, write, delete: if request.auth.uid == ownerId || 
                                  exists(/databases/$(database)/documents/user_shares/$(ownerId)/sharers/$(request.auth.uid));
     }
 
