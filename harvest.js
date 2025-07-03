@@ -350,7 +350,6 @@ function openModal(content, type) {
             document.getElementById('add-trailer-name-cancel-btn').addEventListener('click', () => showWeightModal('full'));
             document.getElementById('add-trailer-name-confirm-btn').addEventListener('click', handleAddNewTrailerName);
         },
-        // FIX: Added handler for the new filter modal
         'filterModal': () => {
             document.getElementById('modal-cancel-btn').addEventListener('click', closeModal);
             const filterOptionsContainer = document.getElementById('modal-filter-options');
@@ -391,7 +390,7 @@ export function showPaymentModal() {
     const content = `
         <h3 class="text-xl font-semibold mb-6 text-center">Passer à la version Premium</h3>
         <p class="text-center text-slate-600 mb-6">
-            Confirmez le paiement de 5€ pour débloquer toutes les fonctionnalités.
+            Confirmez le paiement de 4.99€ pour débloquer toutes les fonctionnalités.
         </p>
         <div class="mt-8 grid grid-cols-2 gap-4">
             <button id="modal-cancel-btn" class="px-6 py-3 bg-slate-200 text-slate-800 rounded-lg hover:bg-slate-300">Annuler</button>
@@ -409,7 +408,8 @@ function showAddFieldModal() {
             <p class="text-center text-slate-600 mb-6">Passez à la version Pro pour ajouter des parcelles en illimité.</p>
             <div class="bg-green-50 border border-green-200 p-6 rounded-lg text-center">
                  <p class="font-semibold text-green-800 text-xl">Version PRO</p>
-                 <p class="text-5xl font-extrabold text-green-600 my-4">5€ <span class="text-xl font-normal">/ mois</span></p>
+                 <!-- MODIFIÉ: Prix mis à jour -->
+                 <p class="text-5xl font-extrabold text-green-600 my-4">4.99€ <span class="text-xl font-normal">/ mois</span></p>
                  <button id="modal-upgrade-btn" class="mt-6 w-full bg-green-600 text-white font-bold py-3 rounded-lg hover:bg-green-700 transition">Mettre à niveau</button>
             </div>
             <button id="modal-close-btn" class="mt-4 w-full text-center text-sm text-slate-600 hover:underline">Plus tard</button>
@@ -464,7 +464,6 @@ function showEditFieldModal(fieldKey) {
     openModal(content, 'editField');
 }
 
-// FIX: New function to show a modal for filtering on mobile
 function showFilterModal() {
     const myFields = Object.values(harvestData).filter(field => field.ownerId === currentUser.uid);
     const crops = [...new Set(myFields.map(field => field.crop).filter(Boolean))].sort((a, b) => a.localeCompare(b));
@@ -904,7 +903,6 @@ function setupEventListeners() {
     navSharedFieldsBtn.addEventListener('click', () => navigateToPage('shared-list'));
     navExportBtn.addEventListener('click', exportToExcel);
 
-    // FIX: Added event listener for the mobile filter button
     if (openFilterModalBtn) {
         openFilterModalBtn.addEventListener('click', showFilterModal);
     }

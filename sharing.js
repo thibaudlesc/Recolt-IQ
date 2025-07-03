@@ -1,20 +1,21 @@
 // sharing.js
 
-// [MODIFIÉ] Import de arrayRemove et writeBatch
 import { db, doc, getDoc, updateDoc, setDoc, onSnapshot, collection, addDoc, query, where, deleteDoc, arrayUnion, arrayRemove, collectionGroup, writeBatch } from './firebase-config.js';
-// [MODIFIÉ] Import de showConfirmationModal et createFilterButton
 import { showToast, navigateToPage, showConfirmationModal, createFilterButton } from './harvest.js';
 
 // --- SÉLECTION DES ÉLÉMENTS DU DOM ---
 const sharedFieldListContainer = document.getElementById('shared-field-list-container');
-// [NOUVEAU] Sélection du conteneur de filtres pour les parcelles partagées
 const sharedCropFiltersContainer = document.getElementById('shared-crop-filters-container');
+// NOUVEAU: Ajout des sélecteurs pour le modal et le bouton de filtre mobile
+const openSharedFilterModalBtn = document.getElementById('open-shared-filter-modal-btn');
+const modalContainer = document.getElementById('modal-container');
+const modalContent = document.getElementById('modal-content');
+
 
 // --- ÉTAT GLOBAL ---
 let currentUser = null;
 let unsubscribeSharedFields = null;
 let isSharingInitialized = false;
-// [NOUVEAU] États pour la gestion des parcelles partagées
 let allSharedFields = [];
 let selectedSharedCrops = [];
 
@@ -38,6 +39,21 @@ export function initSharing(user) {
                 navigateToPage('details', cardContent.dataset.key, cardContent.dataset.ownerId);
             }
         });
+        
+        // NOUVEAU: Ajout du listener pour le bouton de filtre mobile
+        if (openSharedFilterModalBtn) {
+            openSharedFilterModalBtn.addEventListener('click', showSharedFilterModal);
+        }
+
+        // NOUVEAU: Listener pour fermer le modal en cliquant sur le fond
+        if (modalContainer) {
+            modalContainer.addEventListener('click', (e) => {
+                if (e.target.id === 'modal-backdrop') {
+                    closeModal();
+                }
+            });
+        }
+
         isSharingInitialized = true;
     }
 
@@ -73,10 +89,10 @@ function showShareOptionsModal(fieldId) {
     
     modalContainer.classList.remove('hidden');
 
-    const closeModal = () => modalContainer.classList.add('hidden');
+    const closeModalFunc = () => modalContainer.classList.add('hidden');
     
-    document.getElementById('close-share-modal-btn').addEventListener('click', closeModal);
-    if (modalBackdrop) modalBackdrop.addEventListener('click', closeModal);
+    document.getElementById('close-share-modal-btn').addEventListener('click', closeModalFunc);
+    if (modalBackdrop) modalBackdrop.addEventListener('click', closeModalFunc);
 
     document.getElementById('generate-share-link-btn').addEventListener('click', async () => {
         const generateBtn = document.getElementById('generate-share-link-btn');
@@ -108,7 +124,7 @@ function showShareOptionsModal(fieldId) {
         } catch (error) {
             console.error("Erreur lors de la création du lien de partage:", error);
             showToast("Impossible de générer le lien.");
-            closeModal();
+            closeModalFunc();
         }
     });
 }
@@ -141,10 +157,10 @@ export function showMultiShareOptionsModal(fieldIds, selectedCrops) {
     
     modalContainer.classList.remove('hidden');
 
-    const closeModal = () => modalContainer.classList.add('hidden');
+    const closeModalFunc = () => modalContainer.classList.add('hidden');
     
-    document.getElementById('close-share-modal-btn').addEventListener('click', closeModal);
-    if (modalBackdrop) modalBackdrop.addEventListener('click', closeModal);
+    document.getElementById('close-share-modal-btn').addEventListener('click', closeModalFunc);
+    if (modalBackdrop) modalBackdrop.addEventListener('click', closeModalFunc);
 
     document.getElementById('generate-multi-share-link-btn').addEventListener('click', async () => {
         const generateBtn = document.getElementById('generate-multi-share-link-btn');
@@ -177,7 +193,7 @@ export function showMultiShareOptionsModal(fieldIds, selectedCrops) {
         } catch (error) {
             console.error("Erreur lors de la création du lien de partage multiple:", error);
             showToast("Impossible de générer le lien.");
-            closeModal();
+            closeModalFunc();
         }
     });
 }
@@ -194,8 +210,8 @@ function showGeneratedLinkModal(url) {
         <button id="close-share-modal-btn" class="mt-6 w-full px-6 py-3 bg-gray-200 text-gray-800 rounded-lg">Fermer</button>
     `;
 
-    const closeModal = () => document.getElementById('modal-container').classList.add('hidden');
-    document.getElementById('close-share-modal-btn').addEventListener('click', closeModal);
+    const closeModalFunc = () => document.getElementById('modal-container').classList.add('hidden');
+    document.getElementById('close-share-modal-btn').addEventListener('click', closeModalFunc);
     
     document.getElementById('copy-share-url-btn').addEventListener('click', () => {
         const input = document.getElementById('share-url-input');
@@ -266,7 +282,70 @@ export async function handleShareToken(token, user) {
     }
 }
 
-// [NOUVEAU] Gère la révocation de l'accès à une parcelle partagée
+// --- NOUVELLES FONCTIONS DE MODAL ---
+
+function closeModal() {
+    if (modalContainer) modalContainer.classList.add('hidden');
+    if (modalContent) modalContent.innerHTML = '';
+}
+
+function openSharedModal(content, type) {
+    if (!modalContainer || !modalContent) return;
+
+    modalContent.innerHTML = content;
+    modalContainer.classList.remove('hidden');
+
+    if (type === 'filterModal') {
+        document.getElementById('modal-cancel-btn').addEventListener('click', closeModal);
+        const filterOptionsContainer = document.getElementById('modal-filter-options');
+        if (filterOptionsContainer) {
+            filterOptionsContainer.addEventListener('click', (e) => {
+                const button = e.target.closest('.filter-btn');
+                if (!button) return;
+
+                const crop = button.dataset.crop;
+                if (crop === 'all') {
+                    selectedSharedCrops = [];
+                } else {
+                    const index = selectedSharedCrops.indexOf(crop);
+                    if (index > -1) {
+                        selectedSharedCrops.splice(index, 1);
+                    } else {
+                        selectedSharedCrops.push(crop);
+                    }
+                }
+                displaySharedCropFilters();
+                displaySharedFieldList();
+                closeModal();
+            });
+        }
+    }
+}
+
+function showSharedFilterModal() {
+    const crops = [...new Set(allSharedFields.map(field => field.crop).filter(Boolean))].sort((a, b) => a.localeCompare(b));
+
+    let filtersHTML = '';
+    const allButton = createFilterButton('Toutes', 'all', selectedSharedCrops.length === 0);
+    allButton.classList.add('w-full', 'justify-center');
+    filtersHTML += allButton.outerHTML;
+
+    crops.forEach(crop => {
+        const button = createFilterButton(crop, crop, selectedSharedCrops.includes(crop));
+        button.classList.add('w-full', 'justify-center');
+        filtersHTML += button.outerHTML;
+    });
+
+    const content = `
+        <h3 class="text-xl font-semibold mb-6 text-center">Filtrer par culture</h3>
+        <div id="modal-filter-options" class="space-y-2">
+            ${filtersHTML}
+        </div>
+        <button id="modal-cancel-btn" class="mt-6 w-full px-6 py-3 bg-slate-200 rounded-lg">Fermer</button>
+    `;
+    openSharedModal(content, 'filterModal');
+}
+
 async function handleRevokeAccess(fieldId, ownerId, fieldName) {
     const message = `Êtes-vous sûr de vouloir quitter le partage de la parcelle "${fieldName}" ? Vous n'y aurez plus accès.`;
     
@@ -287,7 +366,6 @@ async function handleRevokeAccess(fieldId, ownerId, fieldName) {
     showConfirmationModal(message, action);
 }
 
-// [NOUVEAU] Affiche les filtres pour les parcelles partagées
 function displaySharedCropFilters() {
     const crops = [...new Set(allSharedFields.map(field => field.crop).filter(Boolean))].sort((a, b) => a.localeCompare(b));
     
@@ -315,10 +393,12 @@ function displaySharedCropFilters() {
     });
 }
 
-// [NOUVEAU] Affiche la liste des parcelles partagées (filtrées ou non)
 async function displaySharedFieldList() {
     if (allSharedFields.length === 0) {
-        sharedFieldListContainer.innerHTML = `<p class="text-center text-gray-500 mt-8">Aucune parcelle n'a été partagée avec vous.</p>`;
+        sharedFieldListContainer.innerHTML = `<div class="text-center text-slate-500 mt-8 p-6 bg-slate-100 rounded-lg">
+            <h3 class="font-semibold text-slate-700">Aucun partage</h3>
+            <p class="text-sm mt-1">Aucune parcelle n'a encore été partagée avec vous.</p>
+        </div>`;
         return;
     }
 
@@ -328,7 +408,10 @@ async function displaySharedFieldList() {
     ).sort((a, b) => a.name.localeCompare(b.name));
 
     if (filteredFields.length === 0) {
-        sharedFieldListContainer.innerHTML = `<p class="text-center text-gray-500 mt-8">Aucune parcelle partagée ne correspond à vos filtres.</p>`;
+        sharedFieldListContainer.innerHTML = `<div class="text-center text-slate-500 mt-8 p-6 bg-slate-100 rounded-lg">
+            <h3 class="font-semibold text-slate-700">Aucune parcelle correspondante</h3>
+            <p class="text-sm mt-1">Vérifiez vos filtres pour afficher les parcelles partagées.</p>
+        </div>`;
         return;
     }
 
@@ -338,14 +421,14 @@ async function displaySharedFieldList() {
             const ownerName = ownerDoc.exists() ? ownerDoc.data().name : "Propriétaire Inconnu";
             
             return `
-                <div class="bg-white p-4 rounded-xl shadow-sm border border-gray-200">
+                <div class="bg-white p-4 rounded-xl shadow-sm border border-slate-200">
                     <div class="flex justify-between items-center">
-                        <div class="field-card-content cursor-pointer flex-grow" data-key="${field.id}" data-owner-id="${field.ownerId}">
-                            <h3 class="font-bold text-lg text-gray-800">${field.name}</h3>
-                            <p class="text-sm text-gray-500">Partagé par : <span class="font-semibold">${ownerName}</span></p>
-                            <p class="text-sm text-gray-500">Culture : <span class="font-semibold">${field.crop || 'N/A'}</span></p>
+                        <div class="field-card-content cursor-pointer flex-grow pr-2" data-key="${field.id}" data-owner-id="${field.ownerId}">
+                            <h3 class="font-bold text-lg text-slate-800">${field.name}</h3>
+                            <p class="text-sm text-slate-500">Partagé par : <span class="font-semibold">${ownerName}</span></p>
+                            <p class="text-sm text-slate-500">Culture : <span class="font-semibold">${field.crop || 'N/A'}</span></p>
                         </div>
-                        <button class="revoke-access-btn p-2 text-gray-400 hover:text-red-600 rounded-full hover:bg-gray-100 transition-colors ml-2" 
+                        <button class="revoke-access-btn p-2 text-slate-400 hover:text-red-600 rounded-full hover:bg-slate-100 transition-colors ml-2 flex-shrink-0" 
                                 data-key="${field.id}" 
                                 data-owner-id="${field.ownerId}"
                                 data-field-name="${field.name}" 
@@ -367,7 +450,6 @@ async function displaySharedFieldList() {
     sharedFieldListContainer.innerHTML = fieldCardsHTML;
 }
 
-// [MODIFIÉ] Charge les parcelles, puis appelle les fonctions d'affichage et de filtrage
 function loadSharedFields() {
     if (!currentUser) return;
 

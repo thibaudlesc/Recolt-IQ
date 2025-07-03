@@ -37,6 +37,8 @@
                         <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16m-7 6h7"></path></svg>
                     </button>
                     <div id="mobile-menu" class="hidden absolute right-0 mt-2 w-48 bg-white rounded-md shadow-lg py-1 z-50">
+                        <!-- MODIFIÉ: Ajout du lien "Accueil" -->
+                        <a href="#" class="nav-landing-link block py-2 px-4 text-sm text-slate-700 hover:bg-slate-100">Accueil</a>
                         <a href="#features" class="nav-landing-link block py-2 px-4 text-sm text-slate-700 hover:bg-slate-100">Fonctionnalités</a>
                         <a href="#pricing" class="nav-landing-link block py-2 px-4 text-sm text-slate-700 hover:bg-slate-100">Tarifs</a>
                         <a href="#" id="mobile-nav-link-app" class="block py-2 px-4 text-sm text-slate-700 hover:bg-slate-100 hidden">Mon Espace</a>
@@ -138,7 +140,7 @@
                                 <span class="absolute top-0 -translate-y-1/2 bg-green-500 text-white text-sm font-bold px-3 py-1 rounded-full">Recommandé</span>
                                 <h3 class="text-2xl font-bold">Pro</h3>
                                 <p class="text-slate-500 mt-2">Pour une gestion complète de votre récolte.</p>
-                                <p class="text-5xl font-extrabold my-6">5€ <span class="text-xl font-normal text-slate-500">/ mois</span></p>
+                                <p class="text-5xl font-extrabold my-6">4.99€ <span class="text-xl font-normal text-slate-500">/ mois</span></p>
                                  <ul class="space-y-3 text-slate-700">
                                     <li class="flex items-center"><svg class="h-5 w-5 text-green-500 mr-2" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"></path></svg> Parcelles <strong>illimitées</strong></li>
                                     <li class="flex items-center"><svg class="h-5 w-5 text-green-500 mr-2" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"></path></svg> Partage de parcelles</li>
@@ -241,7 +243,6 @@
                         </button>
                     </div>
                 </header>
-                <!-- FIX: Filters section updated for better mobile experience -->
                 <div class="p-4">
                     <div id="crop-filters-container" class="hidden sm:flex items-center gap-2 overflow-x-auto pb-2 -mx-4 px-4 no-scrollbar"></div>
                     <button id="open-filter-modal-btn" class="sm:hidden w-full flex justify-center items-center gap-2 py-2 px-4 bg-white border border-slate-300 rounded-lg text-slate-700 font-medium">
@@ -259,9 +260,15 @@
                      <h1 class="text-xl font-bold text-slate-800">Champs Partagés</h1>
                  </header>
                  <div class="p-4">
-                    <div id="shared-crop-filters-container" class="flex items-center gap-2 overflow-x-auto pb-2 -mx-4 px-4 no-scrollbar"></div>
+                    <div id="shared-crop-filters-container" class="hidden sm:flex items-center gap-2 overflow-x-auto pb-2 -mx-4 px-4 no-scrollbar"></div>
+                    <button id="open-shared-filter-modal-btn" class="sm:hidden w-full flex justify-center items-center gap-2 py-2 px-4 bg-white border border-slate-300 rounded-lg text-slate-700 font-medium">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                          <path fill-rule="evenodd" d="M3 3a1 1 0 011-1h12a1 1 0 011 1v3a1 1 0 01-.293.707L12 11.414V15a1 1 0 01-.293.707l-2 2A1 1 0 018 17v-5.586L3.293 6.707A1 1 0 013 6V3z" clip-rule="evenodd" />
+                        </svg>
+                        Filtrer par culture
+                    </button>
                  </div>
-                 <div id="shared-field-list-container" class="p-4 space-y-3"></div>
+                 <div id="shared-field-list-container" class="p-4 pt-0 space-y-3"></div>
             </div>
 
             <div id="page-field-details" class="hidden pb-24">
@@ -271,8 +278,8 @@
                     </button>
                     <h1 id="details-header-title" class="text-xl font-bold text-slate-800 text-center flex-grow">Détails</h1>
                     <button id="share-field-details-btn" class="p-2 text-blue-600 hover:bg-blue-100 rounded-full" title="Partager cette parcelle">
-                        <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" viewBox="0 0 20 20" fill="currentColor">
-                            <path d="M15 8a3 3 0 10-2.977-2.63l-4.94 2.47a3 3 0 100 4.319l4.94 2.47a3 3 0 10.875-5.059l-4.94-2.47a3.001 3.001 0 002.042-1.64z" />
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" viewBox="0 0 24 24" fill="currentColor">
+                            <path d="M18 16.08c-.76 0-1.44.3-1.96.77L8.91 12.7c.05-.23.09-.46.09-.7s-.04-.47-.09-.7l7.05-4.11c.54.5 1.25.81 2.04.81 1.66 0 3-1.34 3-3s-1.34-3-3-3-3 1.34-3 3c0 .24.04.47.09.7L8.04 9.81C7.5 9.31 6.79 9 6 9c-1.66 0-3 1.34-3 3s1.34 3 3 3c.79 0 1.5-.31 2.04-.81l7.12 4.16c-.05.21-.08.43-.08.65 0 1.66 1.34 3 3 3s3-1.34 3-3-1.34-3-3-3z"/>
                         </svg>
                     </button>
                 </header>
