@@ -4,78 +4,66 @@ service cloud.firestore {
 
     // --- Fonctions d'aide ---
     function isOwner(userId) {
-      // Vérifie si l'utilisateur authentifié est le propriétaire du document.
       return request.auth.uid == userId;
     }
 
-    function isSharedUser() {
-      // Vérifie si l'UID de l'utilisateur se trouve dans le tableau 'accessControl' du document.
-      // 'resource' représente le document tel qu'il existe AVANT la modification.
-      return resource.data.accessControl.hasAny([request.auth.uid]);
+    function isAcceptingShare() {
+      let before = resource.data;
+      let after = request.resource.data;
+      let isAddingSelf = after.accessControl.hasAny([request.auth.uid]);
+      let otherFieldsUnchanged = after.name == before.name &&
+                                 after.crop == before.crop &&
+                                 after.size == before.size &&
+                                 after.ownerId == before.ownerId &&
+                                 after.trailers == before.trailers;
+      let accessControlLogic =
+          (!('accessControl' in before) && after.accessControl.size() == 1) ||
+          ('accessControl' in before && after.accessControl.size() == before.accessControl.size() + 1);
+      return isAddingSelf && otherFieldsUnchanged && accessControlLogic;
     }
 
-    // --- Profils Utilisateurs ---
+    // --- Règle pour les profils utilisateurs ---
     match /users/{userId} {
-      // N'importe qui d'authentifié peut lire les profils (pour afficher les noms, par exemple).
       allow read: if request.auth != null;
-      // Seul le propriétaire peut modifier son propre profil.
       allow write: if isOwner(userId);
     }
 
-    // --- Noms des Bennes (spécifique à chaque utilisateur) ---
+    // --- Règle pour l'ACCÈS DIRECT aux parcelles ---
+    match /users/{ownerId}/fields/{fieldId} {
+      // Permet de lire une seule parcelle (pour voir les détails ou accepter un partage).
+      allow get: if request.auth != null;
+
+      // Permet au propriétaire de lister ses propres parcelles.
+      allow list: if request.auth != null && isOwner(ownerId);
+
+      // Le propriétaire est le seul à pouvoir créer ou supprimer des parcelles.
+      allow create, delete: if request.auth != null && isOwner(ownerId);
+
+      // [CORRECTION FINALE] La mise à jour est autorisée si :
+      // 1. On est le propriétaire.
+      // 2. On accepte un partage (ajout de soi-même à accessControl).
+      // 3. On est DÉJÀ dans la liste de partage (pour ajouter/modifier des bennes).
+      allow update: if request.auth != null && (
+        isOwner(ownerId) ||
+        isAcceptingShare() ||
+        request.auth.uid in resource.data.accessControl
+      );
+    }
+
+    // --- Règle pour la REQUÊTE sur le groupe de collections 'fields' (pour les partages) ---
+    match /{path=**}/fields/{fieldId} {
+      // Autorise à lister les parcelles partagées avec soi.
+      allow list: if request.auth != null && request.auth.uid in resource.data.accessControl;
+    }
+
+    // --- Règle pour les noms de bennes ---
     match /users/{userId}/trailerNames/{trailerNameId} {
-       // Seul le propriétaire peut gérer sa liste de bennes.
        allow read, write: if isOwner(userId);
     }
 
-    // --- Jetons de Partage (temporaires) ---
+    // --- Règle pour les jetons de partage ---
     match /shareTokens/{tokenId} {
-      // N'importe qui d'authentifié peut créer, lire ou supprimer un jeton.
-      // La sécurité réside dans le fait que les jetons sont uniques et supprimés après usage.
-      allow read, create, delete: if request.auth != null;
-    }
-
-    // --- Parcelles (la règle la plus importante) ---
-    match /users/{ownerId}/fields/{fieldId} {
-
-      // CRÉER une parcelle :
-      // Seul le propriétaire peut créer une parcelle dans sa propre collection.
-      allow create: if isOwner(ownerId);
-
-      // LIRE une parcelle :
-      // Le propriétaire ET les utilisateurs invités (dans accessControl) peuvent lire les données.
-      allow read: if isOwner(ownerId) || isSharedUser();
-
-      // METTRE À JOUR une parcelle :
-      allow update: if
-        // Règle 1: Le propriétaire peut tout modifier.
-        isOwner(ownerId) ||
-
-        // Règle 2: Un utilisateur invité peut UNIQUEMENT modifier la liste des bennes ('trailers').
-        // Tous les autres champs de la parcelle (nom, culture, etc.) doivent rester identiques.
-        (
-          isSharedUser() &&
-          request.resource.data.name == resource.data.name &&
-          request.resource.data.crop == resource.data.crop &&
-          request.resource.data.size == resource.data.size &&
-          request.resource.data.ownerId == resource.data.ownerId &&
-          request.resource.data.accessControl == resource.data.accessControl
-        ) ||
-
-        // Règle 3: Un nouvel utilisateur accepte une invitation.
-        // C'est une mise à jour où seul le tableau 'accessControl' est modifié pour y ajouter le nouvel UID.
-        (
-          request.resource.data.accessControl == resource.data.accessControl.union([request.auth.uid]) &&
-          request.resource.data.name == resource.data.name &&
-          request.resource.data.crop == resource.data.crop &&
-          request.resource.data.size == resource.data.size &&
-          request.resource.data.ownerId == resource.data.ownerId &&
-          request.resource.data.trailers == resource.data.trailers
-        );
-
-      // SUPPRIMER une parcelle :
-      // Seul le propriétaire peut supprimer sa propre parcelle.
-      allow delete: if isOwner(ownerId);
+      allow read, write, delete: if request.auth != null;
     }
   }
 }

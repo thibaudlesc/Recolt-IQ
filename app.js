@@ -10,13 +10,15 @@ import {
     db,
     doc,
     setDoc,
-    getDoc
+    getDoc,
+    GoogleAuthProvider,
+    signInWithPopup
 } from './firebase-config.js';
 
 import { initHarvestApp, showPaymentModal, updateActiveNav } from './harvest.js';
 import { initSharing, handleShareToken } from './sharing.js';
 
-// --- SÉLECTION DES ÉLÉMENTS DU DOM ---
+// --- DOM Element Selection ---
 const landingPage = document.getElementById('landing-page');
 const authPage = document.getElementById('auth-page');
 const appPage = document.getElementById('app-page');
@@ -26,15 +28,16 @@ const loginForm = document.getElementById('login');
 const signupForm = document.getElementById('signup');
 const loginContainer = document.getElementById('login-form');
 const signupContainer = document.getElementById('signup-form');
+const googleSignInBtn = document.getElementById('google-signin-btn');
 
 const navLogo = document.getElementById('nav-logo');
-const navLinkHome = document.getElementById('nav-link-home');
-const navLinkApp = document.getElementById('nav-link-app');
+const mobileNavLinkApp = document.getElementById('mobile-nav-link-app');
 const navLinkLogin = document.getElementById('nav-link-login');
-const navLinkLogout = document.getElementById('nav-link-logout');
+const mobileLogoutBtn = document.getElementById('mobile-logout-btn');
 const ctaStartDemo = document.getElementById('cta-start-demo');
 const ctaSignupDemo = document.getElementById('cta-signup-demo');
 const ctaSignupPro = document.getElementById('cta-signup-pro');
+const ctaFinalDemo = document.getElementById('cta-final-demo');
 
 const showSignupLink = document.getElementById('show-signup');
 const showLoginLink = document.getElementById('show-login');
@@ -44,14 +47,17 @@ const authMessage = document.getElementById('auth-message');
 const signupError = document.getElementById('signup-error');
 const loginError = document.getElementById('login-error');
 
-// --- ÉTAT GLOBAL ---
-let pendingToken = null; // Stocke le jeton en attendant la connexion
+const mobileMenuButton = document.getElementById('mobile-menu-button');
+const mobileMenu = document.getElementById('mobile-menu');
 
-// --- GESTION DE L'AFFICHAGE (VUES) ---
+// --- Global State ---
+let pendingToken = null;
+
+// --- View Management ---
 function showView(viewId) {
-    landingPage.classList.add('hidden');
-    authPage.classList.add('hidden');
-    appPage.classList.add('hidden');
+    if (landingPage) landingPage.classList.add('hidden');
+    if (authPage) authPage.classList.add('hidden');
+    if (appPage) appPage.classList.add('hidden');
     
     const viewToShow = document.getElementById(viewId);
     if (viewToShow) {
@@ -60,21 +66,37 @@ function showView(viewId) {
     window.scrollTo(0, 0);
 }
 
-// --- GESTION DE L'UI ---
-showSignupLink.addEventListener('click', (e) => {
-    e.preventDefault();
-    loginContainer.classList.add('hidden');
-    signupContainer.classList.remove('hidden');
+// --- UI Event Listeners ---
+function safeAddEventListener(element, event, handler) {
+    if (element) {
+        element.addEventListener(event, handler);
+    }
+}
+
+// Mobile Menu Toggle
+safeAddEventListener(mobileMenuButton, 'click', () => {
+    if (mobileMenu) mobileMenu.classList.toggle('hidden');
 });
 
-showLoginLink.addEventListener('click', (e) => {
+safeAddEventListener(showSignupLink, 'click', (e) => {
     e.preventDefault();
-    signupContainer.classList.add('hidden');
-    loginContainer.classList.remove('hidden');
+    if (loginContainer && signupContainer) {
+        loginContainer.classList.add('hidden');
+        signupContainer.classList.remove('hidden');
+    }
 });
 
-forgotPasswordLink.addEventListener('click', async (e) => {
+safeAddEventListener(showLoginLink, 'click', (e) => {
     e.preventDefault();
+    if (signupContainer && loginContainer) {
+        signupContainer.classList.add('hidden');
+        loginContainer.classList.remove('hidden');
+    }
+});
+
+safeAddEventListener(forgotPasswordLink, 'click', async (e) => {
+    e.preventDefault();
+    if (!loginForm || !loginError) return;
     const email = loginForm['login-email'].value;
     if (!email) {
         loginError.textContent = "Veuillez saisir votre e-mail.";
@@ -93,16 +115,33 @@ forgotPasswordLink.addEventListener('click', async (e) => {
     }
 });
 
-// Navigation principale
-navLinkLogin.addEventListener('click', (e) => { e.preventDefault(); showView('auth-page'); });
-navLinkHome.addEventListener('click', (e) => { e.preventDefault(); showView('landing-page'); });
-navLogo.addEventListener('click', (e) => { e.preventDefault(); showView('landing-page'); });
-navLinkApp.addEventListener('click', (e) => { e.preventDefault(); showView('app-page'); });
-ctaStartDemo.addEventListener('click', (e) => { e.preventDefault(); showView('auth-page'); });
-ctaSignupDemo.addEventListener('click', (e) => { e.preventDefault(); showView('auth-page'); });
+// Main navigation
+const navLandingLinks = document.querySelectorAll('.nav-landing-link');
+navLandingLinks.forEach(anchor => {
+    safeAddEventListener(anchor, 'click', function (e) {
+        e.preventDefault();
+        showView('landing-page');
+        const href = this.getAttribute('href'); // FIX: Capture href to use in setTimeout
+        setTimeout(() => {
+            const targetElement = document.querySelector(href);
+            if(targetElement) {
+                targetElement.scrollIntoView({
+                    behavior: 'smooth'
+                });
+            }
+        }, 100); // Small delay to ensure the page is visible before scrolling
+        if (mobileMenu) mobileMenu.classList.add('hidden');
+    });
+});
 
-// Bouton pour passer PRO
-ctaSignupPro.addEventListener('click', (e) => {
+safeAddEventListener(navLinkLogin, 'click', (e) => { e.preventDefault(); showView('auth-page'); if (mobileMenu) mobileMenu.classList.add('hidden'); });
+safeAddEventListener(navLogo, 'click', (e) => { e.preventDefault(); showView('landing-page'); });
+safeAddEventListener(mobileNavLinkApp, 'click', (e) => { e.preventDefault(); showView('app-page'); if (mobileMenu) mobileMenu.classList.add('hidden'); });
+safeAddEventListener(ctaStartDemo, 'click', (e) => { e.preventDefault(); showView('auth-page'); });
+safeAddEventListener(ctaSignupDemo, 'click', (e) => { e.preventDefault(); showView('auth-page'); });
+safeAddEventListener(ctaFinalDemo, 'click', (e) => { e.preventDefault(); showView('auth-page'); });
+
+safeAddEventListener(ctaSignupPro, 'click', (e) => {
     e.preventDefault();
     const user = auth.currentUser;
     if (user) {
@@ -112,70 +151,101 @@ ctaSignupPro.addEventListener('click', (e) => {
     }
 });
 
-// --- AUTHENTIFICATION ---
+// --- Authentication ---
 
-signupForm.addEventListener('submit', async (e) => {
+async function handleSignOut() {
+    try {
+        await signOut(auth);
+    } catch (error) {
+        console.error("Erreur de déconnexion:", error);
+    }
+}
+
+safeAddEventListener(mobileLogoutBtn, 'click', handleSignOut);
+
+
+async function signInWithGoogle() {
+    const provider = new GoogleAuthProvider();
+    try {
+        const userCredential = await signInWithPopup(auth, provider);
+        const user = userCredential.user;
+
+        const userDocRef = doc(db, "users", user.uid);
+        const userDocSnap = await getDoc(userDocRef);
+
+        if (!userDocSnap.exists()) {
+            await setDoc(userDocRef, {
+                name: user.displayName,
+                email: user.email,
+                plan: 'demo'
+            });
+        }
+    } catch (error) {
+        console.error("Erreur de connexion Google:", error);
+        if (loginError) {
+            loginError.textContent = "Erreur de connexion avec Google.";
+            loginError.classList.remove('hidden');
+        }
+    }
+}
+safeAddEventListener(googleSignInBtn, 'click', signInWithGoogle);
+
+safeAddEventListener(signupForm, 'submit', async (e) => {
     e.preventDefault();
     const name = signupForm['signup-name'].value;
     const email = signupForm['signup-email'].value;
     const password = signupForm['signup-password'].value;
-    signupError.classList.add('hidden');
+    if(signupError) signupError.classList.add('hidden');
     try {
         const userCredential = await createUserWithEmailAndPassword(auth, email, password);
         const user = userCredential.user;
         await setDoc(doc(db, "users", user.uid), {
             name: name,
             email: email,
-            plan: 'demo' // Plan 'démo' par défaut
+            plan: 'demo'
         });
-        signupForm.reset();
-        // La redirection se fera via onAuthStateChanged
+        // FIX: Removed form reset to prevent race condition
     } catch (error) {
-        signupError.textContent = "L'adresse e-mail est peut-être déjà utilisée ou invalide.";
-        signupError.classList.remove('hidden');
+        console.error("Signup Error:", error); // Added for better debugging
+        if(signupError) {
+            signupError.textContent = "L'adresse e-mail est peut-être déjà utilisée ou invalide.";
+            signupError.classList.remove('hidden');
+        }
     }
 });
 
-loginForm.addEventListener('submit', async (e) => {
+safeAddEventListener(loginForm, 'submit', async (e) => {
     e.preventDefault();
     const email = loginForm['login-email'].value;
     const password = loginForm['login-password'].value;
-    loginError.classList.add('hidden');
+    if(loginError) loginError.classList.add('hidden');
     try {
         await signInWithEmailAndPassword(auth, email, password);
-        loginForm.reset();
-        // La redirection se fera via onAuthStateChanged
+        // FIX: Removed form reset to prevent race condition
     } catch (error) {
-        loginError.textContent = "Email ou mot de passe incorrect.";
-        loginError.classList.remove('hidden');
+        console.error("Login Error:", error); // Added for better debugging
+        if(loginError){
+            loginError.textContent = "Email ou mot de passe incorrect.";
+            loginError.classList.remove('hidden');
+        }
     }
 });
 
-navLinkLogout.addEventListener('click', async () => {
-    try {
-        await signOut(auth);
-        // Redirection gérée par onAuthStateChanged
-    } catch (error) {
-        console.error("Erreur de déconnexion:", error);
-    }
-});
-
-// Écouteur global de l'état d'authentification
 onAuthStateChanged(auth, async (user) => {
-    // Vérifier s'il y a un jeton dans l'URL à chaque changement d'état
     const urlParams = new URLSearchParams(window.location.search);
     const tokenFromUrl = urlParams.get('token');
 
     if (tokenFromUrl && !user) {
         pendingToken = tokenFromUrl;
-        authMessage.textContent = "Veuillez vous connecter ou créer un compte pour accepter le partage.";
-        authMessage.classList.remove('hidden');
+        if (authMessage) {
+            authMessage.textContent = "Veuillez vous connecter ou créer un compte pour accepter le partage.";
+            authMessage.classList.remove('hidden');
+        }
         showView('auth-page');
-        return; // Attendre que l'utilisateur se connecte
+        return;
     }
 
     if (user) {
-        // Utilisateur connecté
         const userDocRef = doc(db, "users", user.uid);
         const userDocSnap = await getDoc(userDocRef);
 
@@ -184,17 +254,17 @@ onAuthStateChanged(auth, async (user) => {
             userProfile = userDocSnap.data();
         }
 
-        if (userProfile.plan === 'pro') {
-            premiumBadge.classList.remove('hidden');
-        } else {
-            premiumBadge.classList.add('hidden');
+        if (premiumBadge) {
+            premiumBadge.classList.toggle('hidden', userProfile.plan !== 'pro');
         }
         
         showView('app-page');
         updateActiveNav('fields');
-        navLinkApp.classList.remove('hidden');
-        navLinkLogout.classList.remove('hidden');
-        navLinkLogin.classList.add('hidden');
+        
+        // Manage mobile menu visibility
+        if (mobileNavLinkApp) mobileNavLinkApp.classList.remove('hidden');
+        if (mobileLogoutBtn) mobileLogoutBtn.classList.remove('hidden');
+        if (navLinkLogin) navLinkLogin.classList.add('hidden');
         
         initHarvestApp(user, userProfile);
         initSharing(user, userProfile);
@@ -202,18 +272,20 @@ onAuthStateChanged(auth, async (user) => {
         const tokenToProcess = pendingToken || tokenFromUrl;
         if (tokenToProcess) {
             await handleShareToken(tokenToProcess, user);
-            pendingToken = null; // Réinitialiser le jeton
+            pendingToken = null;
         }
 
     } else {
-        // Utilisateur déconnecté
         if (!pendingToken) {
             showView('landing-page');
         }
-        navLinkApp.classList.add('hidden');
-        navLinkLogout.classList.add('hidden');
-        navLinkLogin.classList.remove('hidden');
-        premiumBadge.classList.add('hidden');
-        authMessage.classList.add('hidden');
+        
+        // Manage mobile menu visibility
+        if (mobileNavLinkApp) mobileNavLinkApp.classList.add('hidden');
+        if (mobileLogoutBtn) mobileLogoutBtn.classList.add('hidden');
+        if (navLinkLogin) navLinkLogin.classList.remove('hidden');
+
+        if (premiumBadge) premiumBadge.classList.add('hidden');
+        if (authMessage) authMessage.classList.add('hidden');
     }
 });

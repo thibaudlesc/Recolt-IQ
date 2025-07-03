@@ -1,6 +1,6 @@
 // firebase-config.js
 
-// Imports depuis les SDK Firebase
+// Imports from Firebase SDKs
 import { initializeApp } from "https://www.gstatic.com/firebasejs/9.17.1/firebase-app.js";
 import { 
     getAuth, 
@@ -8,7 +8,9 @@ import {
     signInWithEmailAndPassword, 
     onAuthStateChanged,
     signOut,
-    sendPasswordResetEmail
+    sendPasswordResetEmail,
+    GoogleAuthProvider, // [NOUVEAU] Fournisseur d'authentification Google
+    signInWithPopup     // [NOUVEAU] Fonction pour la connexion via pop-up
 } from "https://www.gstatic.com/firebasejs/9.17.1/firebase-auth.js";
 import { 
     getFirestore, 
@@ -23,7 +25,9 @@ import {
     where,
     deleteDoc,
     arrayUnion,
-    collectionGroup
+    arrayRemove,
+    collectionGroup,
+    writeBatch
 } from "https://www.gstatic.com/firebasejs/9.17.1/firebase-firestore.js";
 
 // TODO: Remplacez par la configuration de votre projet Firebase
@@ -52,6 +56,8 @@ export {
     onAuthStateChanged,
     signOut,
     sendPasswordResetEmail,
+    GoogleAuthProvider, // [NOUVEAU]
+    signInWithPopup,    // [NOUVEAU]
     doc, 
     setDoc, 
     getDoc,
@@ -63,5 +69,7 @@ export {
     where,
     deleteDoc,
     arrayUnion,
-    collectionGroup
+    arrayRemove,
+    collectionGroup,
+    writeBatch
 };
